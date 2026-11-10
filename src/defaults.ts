@@ -8,6 +8,7 @@ export const ITEM_DEFAULTS: Record<ItemType, Template> = {
   rect: { type: 'rect', w: 200, h: 120, fill: '#FFFFFF', color: '#1a1a1a', text: '', fontSize: 18 },
   ellipse: { type: 'ellipse', w: 160, h: 160, fill: '#FFFFFF', color: '#1a1a1a', text: '', fontSize: 18 },
   text: { type: 'text', w: 240, h: 34, fill: 'transparent', color: '#1a1a1a', text: '', fontSize: 24 },
+  frame: { type: 'frame', w: 640, h: 360, fill: '#FFFFFF', color: '#1a1a1a', text: 'Frame', fontSize: 14 },
 };
 
 /** Create an item of `type` centered on world point (cx, cy). */

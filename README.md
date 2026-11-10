@@ -28,6 +28,11 @@ npm run dev
 - Connectors: drag from the blue dots around a selected item, or use the Connector tool (L).
   Ends snap to side midpoints or float on the outline; straight, elbow (routes around the
   connected items) or curved; arrowheads at either end; drag an end to re-attach it
+- Snapping: moving or resizing aligns edges and centers with items on screen, with pink
+  alignment guides; hold Alt to move freely
+- Frames (F): titled white areas that sit behind everything. Drag a frame by its title to
+  move it with everything inside (items whose center is in it); click its body to
+  marquee-select inside; double-click the title to rename; duplicating a frame copies its contents
 - Select, Shift-click and marquee multi-select, move, 8-handle resize
   (sticky notes keep their aspect ratio; Shift locks it for others)
 - Inline text editing (double-click or Enter), color palette, bring to front / send to back
@@ -39,7 +44,8 @@ npm run dev
 
 | Key | Action |
 | --- | --- |
-| V / H / N / T / R / O / L | Select / Hand / Sticky / Text / Rectangle / Ellipse / Connector |
+| V / H / N / T / R / O / L / F | Select / Hand / Sticky / Text / Rectangle / Ellipse / Connector / Frame |
+| Alt (while dragging) | Disable snapping |
 | Ctrl+Z, Ctrl+Shift+Z / Ctrl+Y | Undo, redo |
 | Ctrl+D, Ctrl+C / X / V | Duplicate, copy / cut / paste |
 | Ctrl+A, Esc | Select all, deselect |
@@ -54,6 +60,8 @@ npm run dev
 - `src/store.ts`: board state, actions, history, persistence subscription
 - `src/geometry.ts`: camera math (screen and world coordinates), hit-testing, resize
 - `src/connectors.ts`: connector endpoints, attaching, path geometry (straight/elbow/curved), arrowheads
+- `src/snapping.ts`: edge/center snapping and alignment guides
+- `src/frames.ts`: frame membership and render order
 - `src/components/Canvas.tsx`: viewport, pointer gestures (pan, move, resize, marquee, create), wheel
 - `src/components/ItemView.tsx`: item rendering and inline text editor
 - `src/components/SelectionOverlay.tsx`, `ContextToolbar.tsx`, `Toolbar.tsx`, `ZoomControls.tsx`: UI chrome
@@ -61,7 +69,7 @@ npm run dev
 ## Roadmap ideas
 
 1. Connector labels, freehand pen
-2. Snapping and alignment guides, frames
+2. Equal-spacing guides, nested frames, presenting frames as slides
 3. Viewport culling for very large boards
 4. Multiple boards and a JSON export/import
 5. Real-time collaboration (Yjs + a WebSocket server), then accounts

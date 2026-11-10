@@ -3,6 +3,8 @@ import type { Box, Camera, Connector, Endpoint, Item, Side, Tool, Vec } from './
 import { boundsOf, clampZoom, uid, zoomCameraAt } from './geometry';
 import { connectorGeometry, resolveConnector } from './connectors';
 import { loadBoard, saveBoard } from './persistence';
+import { withFrameChildren } from './frames';
+import type { Guide } from './snapping';
 
 type Snapshot = {
   items: Record<string, Item>;
@@ -31,6 +33,8 @@ export interface BoardState {
   spaceHeld: boolean;
   /** Item (and side) a connector end would attach to, for hover feedback. */
   connectHint: { itemId: string; side: Side | null } | null;
+  /** Alignment guides shown while moving or resizing. */
+  guides: Guide[];
   past: Snapshot[];
   future: Snapshot[];
   clipboard: Clip;
@@ -45,6 +49,7 @@ export interface BoardState {
   setInteracting(v: boolean): void;
   setSpaceHeld(v: boolean): void;
   setConnectHint(hint: BoardState['connectHint']): void;
+  setGuides(guides: Guide[]): void;
 
   /** Record the current board state so the next change can be undone. */
   checkpoint(): void;
@@ -101,6 +106,7 @@ export const useBoard = create<BoardState>()((set, get) => ({
   interacting: false,
   spaceHeld: false,
   connectHint: null,
+  guides: [],
   past: [],
   future: [],
   clipboard: { items: [], connectors: [] },
@@ -150,6 +156,10 @@ export const useBoard = create<BoardState>()((set, get) => ({
   },
   setInteracting: (interacting) => set({ interacting }),
   setSpaceHeld: (spaceHeld) => set({ spaceHeld }),
+  setGuides: (guides) => {
+    if (!guides.length && !get().guides.length) return;
+    set({ guides });
+  },
   setConnectHint: (connectHint) => {
     const cur = get().connectHint;
     if (cur?.itemId === connectHint?.itemId && cur?.side === connectHint?.side) return;
@@ -277,6 +287,7 @@ export const useBoard = create<BoardState>()((set, get) => ({
       }
       return;
     }
+    if (item.type === 'frame' && !text.trim()) text = 'Frame';
     if (item.text === text) return;
     s.checkpoint();
     s.updateItems({ [id]: { text } });
@@ -303,9 +314,11 @@ export const useBoard = create<BoardState>()((set, get) => ({
       return { order: where === 'front' ? [...rest, ...picked] : [...picked, ...rest] };
     });
   },
-  nudge: (ids, dx, dy) => {
-    if (!ids.length) return;
+  nudge: (sel, dx, dy) => {
+    if (!sel.length) return;
     const s = get();
+    // Frames carry their contents along.
+    const ids = withFrameChildren(sel, s.items, s.order);
     s.checkpoint();
     const patches: Record<string, Partial<Item>> = {};
     for (const id of ids) {
@@ -334,7 +347,9 @@ export const useBoard = create<BoardState>()((set, get) => ({
  * Gather `ids` for copying. Connectors running between two copied items come
  * along automatically; ends attached to items that are not copied become free points.
  */
-function collect(s: BoardState, ids: string[]): Clip {
+function collect(s: BoardState, sel: string[]): Clip {
+  // Copying a frame copies what is inside it too.
+  const ids = withFrameChildren(sel, s.items, s.order);
   const idSet = new Set(ids);
   const items = ids.map((id) => s.items[id]).filter(Boolean);
   const itemIds = new Set(items.map((it) => it.id));

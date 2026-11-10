@@ -1,6 +1,7 @@
 import { useBoard } from '../store';
 import type { Tool } from '../types';
 import { Icons } from './Icons';
+import { commitActiveEdit } from '../editing';
 
 const TOOLS: { tool: Tool; label: string; key: string }[] = [
   { tool: 'select', label: 'Select', key: 'V' },
@@ -10,6 +11,7 @@ const TOOLS: { tool: Tool; label: string; key: string }[] = [
   { tool: 'rect', label: 'Rectangle', key: 'R' },
   { tool: 'ellipse', label: 'Ellipse', key: 'O' },
   { tool: 'connector', label: 'Connector', key: 'L' },
+  { tool: 'frame', label: 'Frame', key: 'F' },
 ];
 
 export function Toolbar() {
@@ -19,7 +21,7 @@ export function Toolbar() {
   const { setTool, undo, redo } = useBoard.getState();
 
   return (
-    <div className="toolbar" data-ui>
+    <div className="toolbar" data-ui onPointerDown={commitActiveEdit}>
       {TOOLS.map(({ tool: t, label, key }) => {
         const Icon = Icons[t];
         return (

@@ -48,6 +48,11 @@ export const Icons = {
       <circle cx="12" cy="12" r="8" />
     </Svg>
   ),
+  frame: () => (
+    <Svg>
+      <path d="M7 3v18M17 3v18M3 7h18M3 17h18" />
+    </Svg>
+  ),
   connector: () => (
     <Svg>
       <path d="M4 19C10 19 8 6 18 6" />

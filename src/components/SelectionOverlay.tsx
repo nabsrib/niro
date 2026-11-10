@@ -32,6 +32,7 @@ export function SelectionOverlay() {
   const editingId = useBoard((s) => s.editingId);
   const interacting = useBoard((s) => s.interacting);
   const hint = useBoard((s) => s.connectHint);
+  const guides = useBoard((s) => s.guides);
 
   const selItems = selected.map((id) => items[id]).filter(Boolean);
   const selConnectors = selected.map((id) => connectors[id]).filter(Boolean);
@@ -40,7 +41,11 @@ export function SelectionOverlay() {
   const allBounds = boundsOf([...selItems, ...geos.map((g) => g.bounds)]);
   const hintItem = hint ? items[hint.itemId] : undefined;
 
-  const single = selItems.length === 1 && selConnectors.length === 0 ? selItems[0] : null;
+  // Frames are containers, so they get no "drag to connect" dots.
+  const single =
+    selItems.length === 1 && selConnectors.length === 0 && selItems[0].type !== 'frame'
+      ? selItems[0]
+      : null;
   const singleConn = selConnectors.length === 1 && selItems.length === 0 ? selConnectors[0] : null;
   const singleGeo = singleConn ? geos[0] : null;
   const idle = !interacting && !editingId;
@@ -105,6 +110,32 @@ export function SelectionOverlay() {
             />
           );
         })}
+
+      {guides.map((g, i) =>
+        g.axis === 'x' ? (
+          <div
+            key={i}
+            className="guide"
+            style={{
+              left: g.at * camera.z + camera.x,
+              top: g.from * camera.z + camera.y,
+              width: 1,
+              height: (g.to - g.from) * camera.z,
+            }}
+          />
+        ) : (
+          <div
+            key={i}
+            className="guide"
+            style={{
+              left: g.from * camera.z + camera.x,
+              top: g.at * camera.z + camera.y,
+              width: (g.to - g.from) * camera.z,
+              height: 1,
+            }}
+          />
+        ),
+      )}
 
       {allBounds && idle && <ContextToolbar box={toScreen(allBounds, camera)} ids={selected} />}
     </>

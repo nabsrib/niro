@@ -394,3 +394,54 @@ button {
   margin: -7px 0 0 -7px;
   background: var(--accent);
 }
+
+/* ---------- frames ---------- */
+
+.item--frame {
+  display: block;
+  padding: 0;
+  overflow: visible;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(16, 16, 32, 0.08), 0 2px 8px rgba(16, 16, 32, 0.06);
+}
+
+/* The title sits above the frame and keeps a constant on-screen size. */
+.frame__title {
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  max-width: 100%;
+  margin-bottom: calc(6px / var(--z, 1));
+  padding: calc(2px / var(--z, 1)) 0;
+  font-size: calc(13px / var(--z, 1));
+  line-height: 1.2;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: move;
+}
+
+.frame__title:hover {
+  color: var(--ink);
+}
+
+.frame__title-editor {
+  min-width: calc(60px / var(--z, 1));
+  overflow: visible;
+  color: var(--ink);
+}
+
+/* ---------- alignment guides ---------- */
+
+.guide {
+  position: absolute;
+  background: #f2426d;
+  pointer-events: none;
+}
+
+.frame__title:has(.item__editor) {
+  overflow: visible;
+  max-width: none;
+  cursor: text;
+}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useBoard } from '../store';
 import type { Box, Camera, Endpoint, Item, ItemType, Side, Vec } from '../types';
 import { isCreationTool } from '../types';
@@ -15,7 +16,11 @@ import {
 } from '../geometry';
 import { connectorGeometry, endpointAt, endpointItem, makeConnector } from '../connectors';
 import { ITEM_DEFAULTS, makeItem } from '../defaults';
+import { isFrame, renderOrder, withFrameChildren } from '../frames';
+import { SNAP_DISTANCE, alignmentGuides, snapBox, snapValue } from '../snapping';
+import type { BoardState } from '../store';
 import { ItemView } from './ItemView';
+import { commitActiveEdit } from '../editing';
 import { ConnectorLayer } from './ConnectorLayer';
 import { SelectionOverlay } from './SelectionOverlay';
 
@@ -36,6 +41,10 @@ type Gesture =
       moved: boolean;
       /** On a click without drag inside a multi-selection, narrow to this id. */
       collapseTo: string | null;
+      /** Bounds of the moving items at the start (null if only connectors move). */
+      bounds: Box | null;
+      /** Items to snap against. */
+      targets: Box[];
     }
   | { kind: 'marquee'; startWorld: Vec; base: string[] }
   | {
@@ -45,6 +54,7 @@ type Gesture =
       bounds: Box;
       origin: Record<string, Item>;
       moved: boolean;
+      targets: Box[];
     }
   | { kind: 'create'; startScreen: Vec; startWorld: Vec; id: string; type: ItemType; dragged: boolean }
   /** Drawing a new connector; it is only created once the pointer has moved. */
@@ -54,6 +64,28 @@ type Gesture =
 
 const dist = (a: Vec, b: Vec) => Math.hypot(a.x - b.x, a.y - b.y);
 const attr = (target: Element, name: string) => target.closest(`[${name}]`)?.getAttribute(name) ?? null;
+const shift = (b: Box, d: Vec): Box => ({ ...b, x: b.x + d.x, y: b.y + d.y });
+const containsBox = (outer: Box, inner: Box) =>
+  inner.x >= outer.x &&
+  inner.y >= outer.y &&
+  inner.x + inner.w <= outer.x + outer.w &&
+  inner.y + inner.h <= outer.y + outer.h;
+
+/** Items on screen (minus `exclude`) that moving/resizing items can snap to. */
+function snapTargets(s: BoardState, exclude: Set<string>): Box[] {
+  const { camera: c, viewport: v } = s;
+  const margin = 200 / c.z;
+  const view = {
+    x: -c.x / c.z - margin,
+    y: -c.y / c.z - margin,
+    w: v.w / c.z + margin * 2,
+    h: v.h / c.z + margin * 2,
+  };
+  return s.order
+    .filter((id) => !exclude.has(id))
+    .map((id) => s.items[id])
+    .filter((it) => it && intersects(it, view));
+}
 
 export function Canvas() {
   const ref = useRef<HTMLDivElement>(null);
@@ -110,7 +142,11 @@ export function Canvas() {
   };
 
   const begin = (e: ReactPointerEvent, g: Gesture) => {
-    ref.current!.setPointerCapture(e.pointerId);
+    try {
+      ref.current!.setPointerCapture(e.pointerId);
+    } catch {
+      // The pointer is already gone (e.g. released mid-dispatch); still run the gesture.
+    }
     gesture.current = g;
     if (g.kind !== 'pan') useBoard.getState().setInteracting(true);
   };
@@ -119,7 +155,10 @@ export function Canvas() {
     const target = e.target as Element;
     if (target.closest('[data-editor], [data-ui]')) return;
     const s = useBoard.getState();
-    if (s.editingId) (document.activeElement as HTMLElement | null)?.blur();
+    if (s.editingId) {
+      commitActiveEdit();
+      (document.activeElement as HTMLElement | null)?.blur();
+    }
 
     const screen = local(e);
     const world = screenToWorld(screen, s.camera);
@@ -145,6 +184,7 @@ export function Canvas() {
           bounds: boundsOf(sel)!,
           origin: Object.fromEntries(sel.map((it) => [it.id, it])),
           moved: false,
+          targets: snapTargets(s, new Set(sel.map((it) => it.id))),
         });
         return;
       }
@@ -176,6 +216,9 @@ export function Canvas() {
     // Create a new item.
     if (isCreationTool(s.tool)) {
       const item = makeItem(s.tool, world.x, world.y);
+      if (item.type === 'frame') {
+        item.text = `Frame ${s.order.filter((id) => isFrame(s.items[id])).length + 1}`;
+      }
       s.addItem(item);
       s.setSelected([item.id]);
       begin(e, {
@@ -190,7 +233,17 @@ export function Canvas() {
     }
 
     // Select / move items and connectors.
-    const hitId = attr(target, 'data-item-id') ?? attr(target, 'data-connector-id');
+    let hitId = attr(target, 'data-item-id') ?? attr(target, 'data-connector-id');
+    // A frame is grabbed by its title. Its body behaves like canvas (so you can
+    // marquee inside it), unless the frame is already selected.
+    if (
+      hitId &&
+      isFrame(s.items[hitId]) &&
+      !target.closest('[data-frame-title]') &&
+      !s.selected.includes(hitId)
+    ) {
+      hitId = null;
+    }
     const selItems = s.selected.map((id) => s.items[id]).filter(Boolean);
     const selBounds = s.selected.length > 1 ? boundsOf(selItems) : null;
     const inSelection = !!selBounds && containsPoint(selBounds, world) && !e.shiftKey;
@@ -211,19 +264,23 @@ export function Canvas() {
           collapseTo = hitId;
         }
       }
+      // Frames carry their contents, including loose connector ends inside them.
+      const moving = withFrameChildren(selected, s.items, s.order);
+      const frames = selected.map((id) => s.items[id]).filter(isFrame);
       const origin: Record<string, Vec> = {};
       const freeEnds: Record<string, FreeEnds> = {};
-      for (const id of selected) {
+      const inFrame = (p: Vec) => frames.some((f) => containsPoint(f, p));
+      for (const id of moving) {
         const it = s.items[id];
         if (it) origin[id] = { x: it.x, y: it.y };
-        const c = s.connectors[id];
-        if (c) {
-          freeEnds[id] = {
-            from: c.from.kind === 'point' ? { x: c.from.x, y: c.from.y } : undefined,
-            to: c.to.kind === 'point' ? { x: c.to.x, y: c.to.y } : undefined,
-          };
-        }
       }
+      for (const c of Object.values(s.connectors)) {
+        const picked = selected.includes(c.id);
+        const from = c.from.kind === 'point' && (picked || inFrame(c.from)) ? { x: c.from.x, y: c.from.y } : undefined;
+        const to = c.to.kind === 'point' && (picked || inFrame(c.to)) ? { x: c.to.x, y: c.to.y } : undefined;
+        if (from || to) freeEnds[c.id] = { from, to };
+      }
+      const movingItems = moving.map((id) => s.items[id]).filter(Boolean);
       begin(e, {
         kind: 'move',
         startScreen: screen,
@@ -232,6 +289,9 @@ export function Canvas() {
         freeEnds,
         moved: false,
         collapseTo,
+        // Snap the selection itself; children of a frame just ride along.
+        bounds: boundsOf(selected.map((id) => s.items[id]).filter(Boolean)),
+        targets: movingItems.length ? snapTargets(s, new Set(moving)) : [],
       });
       return;
     }
@@ -272,8 +332,17 @@ export function Canvas() {
           g.moved = true;
           s.checkpoint();
         }
-        const dx = world.x - g.startWorld.x;
-        const dy = world.y - g.startWorld.y;
+        let dx = world.x - g.startWorld.x;
+        let dy = world.y - g.startWorld.y;
+        // Snap edges/centers to nearby items; hold Alt to move freely.
+        if (g.bounds && g.targets.length && !e.altKey) {
+          const snap = snapBox(shift(g.bounds, { x: dx, y: dy }), g.targets, SNAP_DISTANCE / s.camera.z);
+          dx += snap.x;
+          dy += snap.y;
+          s.setGuides(alignmentGuides(shift(g.bounds, { x: dx, y: dy }), g.targets));
+        } else {
+          s.setGuides([]);
+        }
         const patches: Record<string, Partial<Item>> = {};
         for (const id in g.origin) patches[id] = { x: g.origin[id].x + dx, y: g.origin[id].y + dy };
         s.updateItems(patches);
@@ -299,12 +368,23 @@ export function Canvas() {
           origins.some((o) => o.type === 'sticky') ||
           (corner && origins.some((o) => o.type === 'text'));
         const b = g.bounds;
-        const nb = resizeBox(
-          b,
-          g.dir,
-          { x: world.x - g.startWorld.x, y: world.y - g.startWorld.y },
-          lock,
-        );
+        const delta = { x: world.x - g.startWorld.x, y: world.y - g.startWorld.y };
+        const snapping = g.targets.length > 0 && !e.altKey;
+        if (snapping) {
+          // Snap the edge(s) being dragged to nearby edges/centers.
+          const th = SNAP_DISTANCE / s.camera.z;
+          if (g.dir.x) {
+            const edge = (g.dir.x < 0 ? b.x : b.x + b.w) + delta.x;
+            delta.x += snapValue(edge, g.targets, 'x', th) - edge;
+          }
+          if (g.dir.y) {
+            const edge = (g.dir.y < 0 ? b.y : b.y + b.h) + delta.y;
+            delta.y += snapValue(edge, g.targets, 'y', th) - edge;
+          }
+        }
+        const nb = resizeBox(b, g.dir, delta, lock);
+        // Only show guides for what actually lines up after aspect locking.
+        s.setGuides(snapping ? alignmentGuides(nb, g.targets) : []);
         const sx = nb.w / b.w;
         const sy = nb.h / b.h;
         const patches: Record<string, Partial<Item>> = {};
@@ -323,7 +403,11 @@ export function Canvas() {
       case 'marquee': {
         const rect = normalizeRect(g.startWorld, world);
         setMarquee(rect);
-        const hits = s.order.filter((id) => intersects(s.items[id], rect));
+        // Frames are big backdrops: only pick them when fully enclosed.
+        const hits = s.order.filter((id) => {
+          const it = s.items[id];
+          return isFrame(it) ? containsBox(rect, it) : intersects(it, rect);
+        });
         for (const c of Object.values(s.connectors)) {
           const geo = connectorGeometry(c, s.items);
           if (geo?.samples.some((p) => containsPoint(rect, p))) hits.push(c.id);
@@ -397,6 +481,7 @@ export function Canvas() {
     if (ref.current?.hasPointerCapture(e.pointerId)) ref.current.releasePointerCapture(e.pointerId);
     const s = useBoard.getState();
     s.setInteracting(false);
+    s.setGuides([]);
 
     switch (g.kind) {
       case 'pan':
@@ -442,7 +527,10 @@ export function Canvas() {
     if (target.closest('[data-editor], [data-ui]')) return;
     const s = useBoard.getState();
     const id = attr(target, 'data-item-id');
-    if (id && s.tool === 'select') s.startEditing(id);
+    if (!id || s.tool !== 'select') return;
+    // On a frame, only the title is editable.
+    if (isFrame(s.items[id]) && !target.closest('[data-frame-title]')) return;
+    s.startEditing(id);
   };
 
   // Dotted grid that scales with zoom; the step snaps by 5x to stay readable.
@@ -497,12 +585,16 @@ export function Canvas() {
 /** World layer: items and connectors live here; the camera is one CSS transform. */
 function World() {
   const camera = useBoard((s) => s.camera);
-  const order = useBoard((s) => s.order);
+  // Frames first so they sit behind everything; shallow-compared so item
+  // edits that do not change the order do not re-render this list.
+  const order = useBoard(useShallow((s) => renderOrder(s.order, s.items)));
+  const style = {
+    transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.z})`,
+    // Lets world-space UI (frame titles) stay a constant size on screen.
+    '--z': camera.z,
+  } as CSSProperties;
   return (
-    <div
-      className="world"
-      style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.z})` }}
-    >
+    <div className="world" style={style}>
       {order.map((id) => (
         <ItemView key={id} id={id} />
       ))}

@@ -7,7 +7,7 @@ export type Box = { x: number; y: number; w: number; h: number };
  */
 export type Camera = { x: number; y: number; z: number };
 
-export type ItemType = 'sticky' | 'rect' | 'ellipse' | 'text';
+export type ItemType = 'sticky' | 'rect' | 'ellipse' | 'text' | 'frame';
 
 export interface Item extends Box {
   id: string;
@@ -47,7 +47,7 @@ export interface Connector {
 
 export type Tool = 'select' | 'hand' | 'connector' | ItemType;
 
-export const CREATION_TOOLS: ItemType[] = ['sticky', 'text', 'rect', 'ellipse'];
+export const CREATION_TOOLS: ItemType[] = ['sticky', 'text', 'rect', 'ellipse', 'frame'];
 
 export function isCreationTool(tool: Tool): tool is ItemType {
   return (CREATION_TOOLS as string[]).includes(tool);

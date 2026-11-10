@@ -14,7 +14,7 @@ export default function App() {
       <Toolbar />
       <ZoomControls />
       <div className="hint">
-        Scroll to pan · Ctrl + scroll to zoom · Space + drag to pan · Double-click to edit
+        Scroll to pan · Ctrl + scroll to zoom · Space + drag to pan · Double-click to edit · Alt + drag to skip snapping
       </div>
     </div>
   );

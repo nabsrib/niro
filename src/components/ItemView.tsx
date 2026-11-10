@@ -1,6 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useRef } from 'react';
 import { useBoard } from '../store';
 import { textOn } from '../colors';
+import { commitActiveEdit, registerActiveEdit, unregisterActiveEdit } from '../editing';
 import type { ItemType } from '../types';
 
 const PLACEHOLDER: Partial<Record<ItemType, string>> = { text: 'Type something' };
@@ -31,6 +32,30 @@ export const ItemView = memo(function ItemView({ id }: { id: string }) {
 
   if (!item) return null;
 
+  if (item.type === 'frame') {
+    return (
+      <div
+        ref={ref}
+        className="item item--frame"
+        data-item-id={id}
+        style={{
+          transform: `translate(${item.x}px, ${item.y}px)`,
+          width: item.w,
+          height: item.h,
+          background: item.fill,
+        }}
+      >
+        <div className="frame__title" data-frame-title title={editing ? undefined : 'Drag to move, double-click to rename'}>
+          {editing ? (
+            <TextEditor id={id} initial={item.text} singleLine className="frame__title-editor" />
+          ) : (
+            item.text || 'Frame'
+          )}
+        </div>
+      </div>
+    );
+  }
+
   const isText = item.type === 'text';
   return (
     <div
@@ -55,7 +80,20 @@ export const ItemView = memo(function ItemView({ id }: { id: string }) {
   );
 });
 
-function TextEditor({ id, initial, placeholder }: { id: string; initial: string; placeholder?: string }) {
+function TextEditor({
+  id,
+  initial,
+  placeholder,
+  singleLine = false,
+  className = 'item__text',
+}: {
+  id: string;
+  initial: string;
+  placeholder?: string;
+  /** Enter commits instead of inserting a newline. */
+  singleLine?: boolean;
+  className?: string;
+}) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -72,11 +110,14 @@ function TextEditor({ id, initial, placeholder }: { id: string; initial: string;
     const commit = () => {
       if (done) return;
       done = true;
+      unregisterActiveEdit(commit);
       useBoard.getState().finishEditing(id, el.innerText.replace(/\n$/, ''));
     };
+    registerActiveEdit(commit);
     el.addEventListener('blur', commit);
     return () => {
       el.removeEventListener('blur', commit);
+      unregisterActiveEdit(commit);
       // Real unmount (not a StrictMode re-run): make sure the text is saved.
       if (!el.isConnected) commit();
     };
@@ -89,14 +130,15 @@ function TextEditor({ id, initial, placeholder }: { id: string; initial: string;
       ref={ref}
       data-editor
       data-placeholder={placeholder}
-      className="item__text item__editor"
+      className={`${className} item__editor`}
       contentEditable="plaintext-only"
       suppressContentEditableWarning
       spellCheck={false}
       onKeyDown={(e) => {
         e.stopPropagation();
-        if (e.key === 'Escape' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
+        if (e.key === 'Escape' || (e.key === 'Enter' && (singleLine || e.ctrlKey || e.metaKey))) {
           e.preventDefault();
+          commitActiveEdit();
           ref.current?.blur();
         }
       }}
