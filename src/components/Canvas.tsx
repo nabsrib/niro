@@ -65,7 +65,14 @@ type Gesture =
     }
   | { kind: 'create'; startScreen: Vec; startWorld: Vec; id: string; type: ItemType; dragged: boolean }
   /** Drawing a new connector; it is only created once the pointer has moved. */
-  | { kind: 'connect'; startScreen: Vec; from: Endpoint; id: string | null }
+  | {
+      kind: 'connect';
+      startScreen: Vec;
+      from: Endpoint;
+      id: string | null;
+      /** Started on a connect dot: a click without dragging adds a connected copy. */
+      quick?: { itemId: string; side: Side };
+    }
   /** Dragging one end of an existing connector. */
   | { kind: 'reconnect'; id: string; end: 'from' | 'to'; moved: boolean }
   /** Dragging the middle handle of a curved connector to reshape it. */
@@ -207,7 +214,13 @@ export function Canvas() {
     const side = attr(target, 'data-connect-side') as Side | null;
     const sourceId = attr(target, 'data-connect-item');
     if (side && sourceId) {
-      begin(e, { kind: 'connect', startScreen: screen, from: { kind: 'item', itemId: sourceId, side }, id: null });
+      begin(e, {
+        kind: 'connect',
+        startScreen: screen,
+        from: { kind: 'item', itemId: sourceId, side },
+        id: null,
+        quick: { itemId: sourceId, side },
+      });
       return;
     }
 
@@ -551,6 +564,11 @@ export function Canvas() {
         if (g.id) {
           s.setTool('select');
           s.setSelected([g.id]);
+        } else if (g.quick) {
+          // Clicked a connect dot without dragging: add a connected copy and
+          // start typing into it, like Miro.
+          const id = s.quickCreate(g.quick.itemId, g.quick.side);
+          if (id) s.startEditing(id);
         }
         break;
       case 'reconnect':

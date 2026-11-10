@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react';
 import { useBoard } from '../store';
 import { HANDLES, boundsOf, worldToScreen } from '../geometry';
 import { SIDES, connectorGeometry, sidePoint } from '../connectors';
-import type { Box, Camera, Side } from '../types';
+import { OPPOSITE, canQuickCreate, quickCreateBox } from '../quickCreate';
+import type { Box, Camera, Item, Side, Vec } from '../types';
 import { ContextToolbar } from './ContextToolbar';
 
 const toScreen = (b: Box, c: Camera) => ({
@@ -28,6 +30,7 @@ export function SelectionOverlay() {
   const selected = useBoard((s) => s.selected);
   const items = useBoard((s) => s.items);
   const connectors = useBoard((s) => s.connectors);
+  const order = useBoard((s) => s.order);
   const camera = useBoard((s) => s.camera);
   const editingId = useBoard((s) => s.editingId);
   const interacting = useBoard((s) => s.interacting);
@@ -49,6 +52,12 @@ export function SelectionOverlay() {
   const singleConn = selConnectors.length === 1 && selItems.length === 0 ? selConnectors[0] : null;
   const singleGeo = singleConn ? geos[0] : null;
   const idle = !interacting && !editingId;
+
+  // Which connect dot the pointer is over, for the quick-create preview.
+  const [hoverSide, setHoverSide] = useState<Side | null>(null);
+  const singleId = single?.id;
+  useEffect(() => setHoverSide(null), [singleId, interacting, editingId]);
+  const ghostSide = single && idle && canQuickCreate(single) ? hoverSide : null;
 
   return (
     <>
@@ -88,13 +97,28 @@ export function SelectionOverlay() {
             <div
               key={side}
               className="connect-dot"
-              title="Drag to connect"
+              title={
+                canQuickCreate(single)
+                  ? 'Click to add a connected copy · drag to draw a connector'
+                  : 'Drag to draw a connector'
+              }
               data-connect-side={side}
               data-connect-item={single.id}
               style={{ left: p.x + SIDE_OFFSET[side].x, top: p.y + SIDE_OFFSET[side].y }}
+              onPointerEnter={() => setHoverSide(side)}
+              onPointerLeave={() => setHoverSide((cur) => (cur === side ? null : cur))}
             />
           );
         })}
+
+      {single && ghostSide && (
+        <QuickCreateGhost
+          src={single}
+          side={ghostSide}
+          box={quickCreateBox(single, ghostSide, items, order)}
+          camera={camera}
+        />
+      )}
 
       {singleConn && singleGeo && !editingId &&
         (['from', 'to'] as const).map((end) => {
@@ -150,6 +174,30 @@ export function SelectionOverlay() {
       )}
 
       {allBounds && idle && <ContextToolbar box={toScreen(allBounds, camera)} ids={selected} />}
+    </>
+  );
+}
+
+/** Dimmed preview of the copy (and arrow) a click on a connect dot would create. */
+function QuickCreateGhost({ src, side, box, camera }: { src: Item; side: Side; box: Box; camera: Camera }) {
+  const from = worldToScreen(sidePoint(src, side), camera);
+  const to = worldToScreen(sidePoint(box, OPPOSITE[side]), camera);
+  const len = Math.hypot(to.x - from.x, to.y - from.y) || 1;
+  const u: Vec = { x: (to.x - from.x) / len, y: (to.y - from.y) / len };
+  const head = 10;
+  const base = { x: to.x - u.x * head, y: to.y - u.y * head };
+  const n = { x: -u.y * head * 0.5, y: u.x * head * 0.5 };
+  const shape = src.type === 'ellipse' ? ' quick-ghost--ellipse' : '';
+  return (
+    <>
+      <div
+        className={`quick-ghost${shape}`}
+        style={{ ...toScreen(box, camera), background: src.fill }}
+      />
+      <svg className="quick-ghost__arrow">
+        <line x1={from.x} y1={from.y} x2={base.x} y2={base.y} />
+        <path d={`M ${to.x} ${to.y} L ${base.x + n.x} ${base.y + n.y} L ${base.x - n.x} ${base.y - n.y} Z`} />
+      </svg>
     </>
   );
 }

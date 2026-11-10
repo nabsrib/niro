@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import type { Box, Camera, Connector, Endpoint, Item, Side, Tool, Vec } from './types';
 import { boundsOf, clampZoom, uid, zoomCameraAt } from './geometry';
-import { connectorGeometry, resolveConnector } from './connectors';
+import { connectorGeometry, makeConnector, resolveConnector } from './connectors';
+import { OPPOSITE, canQuickCreate, quickCreateBox } from './quickCreate';
 import { loadBoard, saveBoard } from './persistence';
 import { withFrameChildren } from './frames';
 import type { Guide } from './snapping';
@@ -60,6 +61,11 @@ export interface BoardState {
   /** Patch items without recording history (call checkpoint() first). */
   updateItems(patches: Record<string, Partial<Item>>): void;
   addConnector(c: Connector): void;
+  /**
+   * Add a same-type copy of an item next to its `side`, joined by a connector,
+   * as one undoable step. Returns the new item's id.
+   */
+  quickCreate(srcId: string, side: Side): string | null;
   /** Patch a connector without recording history (call checkpoint() first). */
   updateConnector(id: string, patch: Partial<Connector>): void;
   /** Change connector styling as one undoable step. */
@@ -209,6 +215,24 @@ export const useBoard = create<BoardState>()((set, get) => ({
   addConnector: (c) => {
     get().checkpoint();
     set((s) => ({ connectors: { ...s.connectors, [c.id]: c } }));
+  },
+  quickCreate: (srcId, side) => {
+    const s = get();
+    const src = s.items[srcId];
+    if (!canQuickCreate(src)) return null;
+    const box = quickCreateBox(src, side, s.items, s.order);
+    const item: Item = { ...src, ...box, id: uid(), text: '' };
+    const link = makeConnector(
+      { kind: 'item', itemId: src.id, side },
+      { kind: 'item', itemId: item.id, side: OPPOSITE[side] },
+    );
+    s.checkpoint();
+    set((st) => ({
+      items: { ...st.items, [item.id]: item },
+      order: [...st.order, item.id],
+      connectors: { ...st.connectors, [link.id]: link },
+    }));
+    return item.id;
   },
   updateConnector: (id, patch) =>
     set((s) =>

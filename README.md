@@ -26,6 +26,8 @@ npm run dev
   Space + drag, middle mouse or the Hand tool to pan, dotted grid that adapts to zoom
 - Items: sticky notes, text, rectangles, ellipses (click to place, or drag to size)
 - Connectors: drag from the blue dots around a selected item, or use the Connector tool (L).
+  Hovering a dot previews a connected copy of the shape; clicking it creates that copy
+  (sliding sideways if the spot is taken) and starts editing its text.
   Ends snap to side midpoints or float on the outline; straight, elbow (routes around the
   connected items) or curved; arrowheads at either end; drag an end to re-attach it.
   Curved connectors have a diamond handle in the middle: drag it to shape the curve,
