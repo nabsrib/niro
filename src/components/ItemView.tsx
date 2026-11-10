@@ -39,7 +39,7 @@ export const ItemView = memo(function ItemView({ id }: { id: string }) {
     const d = smoothPath(pathPoints(item));
     return (
       <div
-        className="item item--path"
+        className={`item item--path${item.highlight ? ' item--highlight' : ''}`}
         data-item-id={id}
         style={{ transform: `translate(${item.x}px, ${item.y}px)`, width: item.w, height: item.h }}
       >
@@ -106,7 +106,8 @@ export const ItemView = memo(function ItemView({ id }: { id: string }) {
   );
 });
 
-function TextEditor({
+/** Inline plain-text editor; saves through `finishEditing` on blur, Esc or Ctrl+Enter. */
+export function TextEditor({
   id,
   initial,
   placeholder,

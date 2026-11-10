@@ -54,6 +54,20 @@ export const Icons = {
       <path d="M13 7l4 4" />
     </Svg>
   ),
+  highlighter: () => (
+    <Svg>
+      <path d="M15 4l5 5-8.5 8.5-5-5z" />
+      <path d="M6.5 12.5L4 15v3h3l2.5-2.5" />
+      <path d="M13 21h8" />
+    </Svg>
+  ),
+  eraser: () => (
+    <Svg>
+      <path d="M4.5 15.5l9.6-9.6a2 2 0 012.8 0l2.2 2.2a2 2 0 010 2.8L11 19H8z" />
+      <path d="M9.5 10.5l4.5 4.5" />
+      <path d="M11 19h9" />
+    </Svg>
+  ),
   frame: () => (
     <Svg>
       <path d="M7 3v18M17 3v18M3 7h18M3 17h18" />

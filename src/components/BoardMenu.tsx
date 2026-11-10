@@ -37,7 +37,7 @@ export function BoardMenu() {
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
-        niro
+        Niro
         <Icons.chevronDown />
       </button>
       {open && (

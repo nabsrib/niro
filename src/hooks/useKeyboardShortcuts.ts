@@ -2,20 +2,13 @@ import { useEffect } from 'react';
 import { useBoard } from '../store';
 import type { Tool } from '../types';
 import { exportBoard, pickBoardFile } from '../boardActions';
+import { TOOL_SHORTCUTS } from '../shortcuts';
 
-const TOOL_KEYS: Record<string, Tool> = {
-  v: 'select',
-  h: 'hand',
-  n: 'sticky',
-  t: 'text',
-  r: 'rect',
-  o: 'ellipse',
-  l: 'connector',
-  f: 'frame',
-  p: 'pen',
-};
+const TOOL_KEYS: Record<string, Tool> = Object.fromEntries(
+  TOOL_SHORTCUTS.map(({ key, tool }) => [key.toLowerCase(), tool] as const),
+);
 
-const isEditable = (t: EventTarget | null) =>
+export const isEditable = (t: EventTarget | null) =>
   t instanceof HTMLElement &&
   (t.isContentEditable || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
 
@@ -123,6 +116,12 @@ export function useKeyboardShortcuts() {
           return;
       }
 
+      // P picks the pen, Shift+P the highlighter, E the eraser (all modes of the pen tool).
+      if (key === 'p' || (key === 'e' && !e.shiftKey)) {
+        s.setTool('pen');
+        s.setPenMode(key === 'e' ? 'eraser' : e.shiftKey ? 'highlighter' : 'pen');
+        return;
+      }
       if (!e.shiftKey && TOOL_KEYS[key]) s.setTool(TOOL_KEYS[key]);
     };
 

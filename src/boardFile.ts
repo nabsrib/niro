@@ -1,6 +1,6 @@
 import type { Bend, Connector, Endpoint, Item, ItemType, Side, Vec } from './types';
 import { MIN_ITEM_SIZE, boundsOf, uid } from './geometry';
-import { CONNECTOR_DEFAULTS } from './connectors';
+import { CONNECTOR_DEFAULTS, LABEL_DEFAULTS } from './connectors';
 import { ITEM_DEFAULTS } from './defaults';
 
 /**
@@ -83,7 +83,7 @@ function sanitizeItem(raw: unknown): Item | null {
   if (!Number.isFinite(raw.x) || !Number.isFinite(raw.y)) return null;
 
   // Pen strokes need a valid list of normalized points.
-  let pen: Pick<Item, 'points' | 'strokeWidth'> = {};
+  let pen: Pick<Item, 'points' | 'strokeWidth' | 'highlight'> = {};
   if (type === 'path') {
     const pts = raw.points;
     if (
@@ -98,6 +98,7 @@ function sanitizeItem(raw: unknown): Item | null {
     pen = {
       points: pts as number[],
       strokeWidth: Math.min(Math.max(num(raw.strokeWidth, d.strokeWidth ?? 3), 0.05), 1000),
+      ...(raw.highlight === true ? { highlight: true } : {}),
     };
   }
   // Thin strokes (e.g. a straight line) may legitimately be narrower than shapes.
@@ -151,6 +152,10 @@ function sanitizeConnector(raw: unknown, itemIds: Set<string>): Connector | null
     startArrow: raw.startArrow === 'arrow' ? 'arrow' : 'none',
     endArrow: raw.endArrow === 'none' ? 'none' : 'arrow',
     bend,
+    ...(typeof raw.label === 'string' && raw.label.trim() ? { label: raw.label.slice(0, 10_000) } : {}),
+    ...(Number.isFinite(raw.labelAt) ? { labelAt: Math.min(Math.max(raw.labelAt as number, 0), 1) } : {}),
+    ...(Number.isFinite(raw.labelSize) ? { labelSize: Math.min(Math.max(raw.labelSize as number, 4), 400) } : {}),
+    ...(typeof raw.labelColor === 'string' ? { labelColor: color(raw.labelColor, LABEL_DEFAULTS.color) } : {}),
   };
 }
 

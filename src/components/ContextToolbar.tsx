@@ -1,7 +1,10 @@
+import { useEffect, useState } from 'react';
 import { useBoard } from '../store';
+import { LABEL_COLORS, LABEL_DEFAULTS, LABEL_SIZES } from '../connectors';
 import { PALETTE } from '../colors';
 import type { ConnectorStyle } from '../types';
 import { Icons } from './Icons';
+import { tooltip } from '../shortcuts';
 
 type ScreenBox = { left: number; top: number; width: number; height: number };
 
@@ -30,6 +33,20 @@ export function ContextToolbar({ box, ids }: { box: ScreenBox; ids: string[] }) 
   const allStart = selConns.length > 0 && selConns.every((c) => c.startArrow === 'arrow');
   const allEnd = selConns.length > 0 && selConns.every((c) => c.endArrow === 'arrow');
   const bentIds = selConns.filter((c) => c.style === 'curved' && c.bend).map((c) => c.id);
+
+  // Label text options apply to every selected connector that has a label.
+  const labeled = selConns.filter((c) => c.label);
+  const labeledIds = labeled.map((c) => c.id);
+  const sizes = new Set(labeled.map((c) => c.labelSize ?? LABEL_DEFAULTS.size));
+  const labelSize = sizes.size === 1 ? [...sizes][0] : null;
+  const sizeOptions =
+    labelSize !== null && !LABEL_SIZES.includes(labelSize)
+      ? [...LABEL_SIZES, labelSize].sort((a, b) => a - b)
+      : LABEL_SIZES;
+  const labelColor = labeled[0]?.labelColor ?? LABEL_DEFAULTS.color;
+  const [colorsOpen, setColorsOpen] = useState(false);
+  const selectionKey = ids.join(',');
+  useEffect(() => setColorsOpen(false), [selectionKey]);
 
   // Flip below the selection when there is no room above it.
   const above = box.top > 70;
@@ -83,6 +100,69 @@ export function ContextToolbar({ box, ids }: { box: ScreenBox; ids: string[] }) 
             >
               <Icons.resetCurve />
             </button>
+          )}
+          {selConns.length === 1 && (
+            <button
+              className={`icon-btn${selConns[0].label ? ' icon-btn--active' : ''}`}
+              title={tooltip(selConns[0].label ? 'Edit label' : 'Add label', ['Enter'])}
+              aria-label={selConns[0].label ? 'Edit label' : 'Add label'}
+              onClick={() => s.startEditing(selConns[0].id)}
+            >
+              <Icons.text />
+            </button>
+          )}
+          {labeled.length > 0 && (
+            <>
+              <select
+                className="font-size"
+                value={labelSize ?? ''}
+                title="Label text size"
+                aria-label="Label text size"
+                onChange={(e) => {
+                  s.styleConnectors(labeledIds, { labelSize: Number(e.target.value) });
+                  // Hand keyboard shortcuts back to the board.
+                  e.currentTarget.blur();
+                }}
+              >
+                {labelSize === null && <option value="">–</option>}
+                {sizeOptions.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+              <div className="text-color">
+                <button
+                  className={`icon-btn${colorsOpen ? ' icon-btn--active' : ''}`}
+                  title="Label text color"
+                  aria-label="Label text color"
+                  aria-expanded={colorsOpen}
+                  onClick={() => setColorsOpen((o) => !o)}
+                >
+                  <span className="text-color__glyph">
+                    A
+                    <span className="text-color__bar" style={{ background: labelColor }} />
+                  </span>
+                </button>
+                {colorsOpen && (
+                  <div className="text-color__menu">
+                    {LABEL_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        className={`swatch${labelColor.toLowerCase() === c.toLowerCase() ? ' swatch--active' : ''}`}
+                        style={{ background: c }}
+                        title={c}
+                        aria-label={`Label color ${c}`}
+                        onClick={() => {
+                          s.styleConnectors(labeledIds, { labelColor: c });
+                          setColorsOpen(false);
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
           )}
           <div className="divider" />
         </>

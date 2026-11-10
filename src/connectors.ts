@@ -329,6 +329,51 @@ export function connectorGeometry(c: Connector, items: ItemMap): ConnectorGeomet
   };
 }
 
+// ---------- labels ----------
+
+export const LABEL_DEFAULTS = { size: 18, color: '#1A1A1A' };
+/** Font sizes offered for connector labels. */
+export const LABEL_SIZES = [12, 14, 18, 24, 32, 48, 64, 96];
+export const LABEL_COLORS = ['#1A1A1A', '#6B6B76', '#E5383B', '#F28C28', '#2BA84A', '#2F6FED', '#8E44D9', '#FFFFFF'];
+
+/** Point `t` (0..1) of the way along a polyline, measured by length. */
+export function pointAlong(pts: Vec[], t: number): Vec {
+  if (pts.length < 2) return pts[0] ?? { x: 0, y: 0 };
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) total += len(sub(pts[i], pts[i - 1]));
+  let left = Math.min(Math.max(t, 0), 1) * total;
+  for (let i = 1; i < pts.length; i++) {
+    const seg = len(sub(pts[i], pts[i - 1]));
+    if (left <= seg && seg > 0) {
+      const k = left / seg;
+      return { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * k, y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * k };
+    }
+    left -= seg;
+  }
+  return pts[pts.length - 1];
+}
+
+/** Fraction (0..1) of the way along a polyline, by length, of its point closest to `p`. */
+export function fractionAlong(pts: Vec[], p: Vec): number {
+  if (pts.length < 2) return 0.5;
+  let total = 0;
+  let best = Infinity;
+  let bestAt = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1];
+    const d = sub(pts[i], a);
+    const seg = len(d);
+    const k = seg > 0 ? Math.min(Math.max(((p.x - a.x) * d.x + (p.y - a.y) * d.y) / (seg * seg), 0), 1) : 0;
+    const dist = len(sub(p, { x: a.x + d.x * k, y: a.y + d.y * k }));
+    if (dist < best) {
+      best = dist;
+      bestAt = total + seg * k;
+    }
+    total += seg;
+  }
+  return total > 0 ? bestAt / total : 0.5;
+}
+
 // ---------- attaching ----------
 
 /** Topmost item under `p` (with `pad` world units of slack), ignoring `exclude`. */

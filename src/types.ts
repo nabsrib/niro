@@ -25,6 +25,8 @@ export interface Item extends Box {
   points?: number[];
   /** Pen paths only: stroke width in world units. */
   strokeWidth?: number;
+  /** Pen paths only: drawn with the highlighter (wide, see-through). */
+  highlight?: boolean;
 }
 
 export type Side = 'top' | 'right' | 'bottom' | 'left';
@@ -61,7 +63,18 @@ export interface Connector {
   endArrow: ArrowHead;
   /** User-controlled curve shape (curved style only); absent = automatic curve. */
   bend?: Bend | null;
+  /** Text shown on the line; absent or empty = no label. */
+  label?: string;
+  /** Where the label sits, as a fraction of the line's length from start (0) to end (1); absent = middle. */
+  labelAt?: number;
+  /** Label font size in world units; absent = LABEL_DEFAULTS.size. */
+  labelSize?: number;
+  /** Label text color; absent = LABEL_DEFAULTS.color. */
+  labelColor?: string;
 }
+
+/** What the pen tool does: draw a solid stroke, draw a see-through highlight, or erase strokes. */
+export type PenMode = 'pen' | 'highlighter' | 'eraser';
 
 /** Pen strokes ('path' items) are drawn with the pen tool, not placed directly. */
 export type Tool = 'select' | 'hand' | 'connector' | 'pen' | CreationTool;

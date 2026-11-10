@@ -4,6 +4,9 @@ import { uid } from './geometry';
 export const PEN_COLORS = ['#1A1A1A', '#E5383B', '#F28C28', '#2BA84A', '#2F6FED', '#8E44D9'];
 /** Pen widths in screen pixels at the zoom level the stroke is drawn at. */
 export const PEN_WIDTHS = [2, 4, 8];
+export const HIGHLIGHTER_COLORS = ['#FFE14D', '#7EE081', '#FF8FC7', '#6EC6FF', '#FFB054'];
+/** Highlighter widths in screen pixels, like `PEN_WIDTHS`. */
+export const HIGHLIGHTER_WIDTHS = [12, 20, 32];
 
 /** Distance from point p to segment a-b. */
 function segmentDistance(p: Vec, a: Vec, b: Vec): number {
@@ -73,7 +76,7 @@ export function pathPoints(it: Item): Vec[] {
  * Build a pen item from world-space points. The box hugs the stroke (including
  * its width) and the points are stored normalized to that box.
  */
-export function makePathItem(world: Vec[], color: string, strokeWidth: number): Item {
+export function makePathItem(world: Vec[], color: string, strokeWidth: number, highlight = false): Item {
   const pad = strokeWidth / 2;
   let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
   for (const p of world) {
@@ -101,5 +104,88 @@ export function makePathItem(world: Vec[], color: string, strokeWidth: number): 
     fontSize: 14,
     points,
     strokeWidth,
+    ...(highlight ? { highlight: true } : {}),
   };
+}
+
+/** Eraser diameter range and default, in screen pixels at the current zoom. */
+export const ERASER_MIN = 4;
+export const ERASER_MAX = 80;
+export const ERASER_DEFAULT = 24;
+
+/** Points from a to b (both included), at most `step` apart. */
+function sampleLine(a: Vec, b: Vec, step: number, out: Vec[], includeStart: boolean) {
+  const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step));
+  for (let k = includeStart ? 0 : 1; k <= n; k++) {
+    const t = k / n;
+    out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  }
+}
+
+/**
+ * Points along the curve `smoothPath` draws through `pts`, roughly `step`
+ * apart, so erasing follows what is on screen rather than the raw points.
+ */
+function sampleStroke(pts: Vec[], step: number): Vec[] {
+  const out: Vec[] = [];
+  if (pts.length < 3) {
+    if (pts.length === 1) out.push(pts[0]);
+    else if (pts.length === 2) sampleLine(pts[0], pts[1], step, out, true);
+    return out;
+  }
+  out.push(pts[0]);
+  let start = pts[0];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const c = pts[i];
+    const end = { x: (c.x + pts[i + 1].x) / 2, y: (c.y + pts[i + 1].y) / 2 };
+    const len = Math.hypot(c.x - start.x, c.y - start.y) + Math.hypot(end.x - c.x, end.y - c.y);
+    const n = Math.max(1, Math.ceil(len / step));
+    for (let k = 1; k <= n; k++) {
+      const t = k / n;
+      const u = 1 - t;
+      out.push({
+        x: u * u * start.x + 2 * u * t * c.x + t * t * end.x,
+        y: u * u * start.y + 2 * u * t * c.y + t * t * end.y,
+      });
+    }
+    start = end;
+  }
+  sampleLine(start, pts[pts.length - 1], step, out, false);
+  return out;
+}
+
+/**
+ * Erase the part of a pen stroke that an eraser swept from `a` to `b` covers
+ * (world points; `radius` in world units). Returns `null` when the stroke is
+ * untouched, otherwise the pieces left over (none if it was wiped out), as new
+ * stroke items with the same color, width and highlight. `tolerance` is the
+ * simplification tolerance for the pieces, in world units.
+ */
+export function eraseStroke(it: Item, a: Vec, b: Vec, radius: number, tolerance: number): Item[] | null {
+  if (it.type !== 'path') return null;
+  const width = it.strokeWidth ?? 3;
+  const reach = radius + width / 2;
+  // Quick reject: the swept segment must come near the stroke's box.
+  if (
+    Math.max(a.x, b.x) < it.x - reach ||
+    Math.min(a.x, b.x) > it.x + it.w + reach ||
+    Math.max(a.y, b.y) < it.y - reach ||
+    Math.min(a.y, b.y) > it.y + it.h + reach
+  ) {
+    return null;
+  }
+  const world = pathPoints(it).map((p) => ({ x: p.x + it.x, y: p.y + it.y }));
+  const samples = sampleStroke(world, Math.max(radius / 3, 0.05));
+  const keep = samples.map((p) => segmentDistance(p, a, b) > reach);
+  if (keep.every(Boolean)) return null;
+
+  const pieces: Item[] = [];
+  let run: Vec[] = [];
+  const flush = () => {
+    if (run.length >= 2) pieces.push(makePathItem(simplify(run, tolerance), it.color, width, !!it.highlight));
+    run = [];
+  };
+  samples.forEach((p, i) => (keep[i] ? run.push(p) : flush()));
+  flush();
+  return pieces;
 }

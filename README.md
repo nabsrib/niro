@@ -31,12 +31,24 @@ npm run dev
   Ends snap to side midpoints or float on the outline; straight, elbow (routes around the
   connected items) or curved; arrowheads at either end; drag an end to re-attach it.
   Curved connectors have a diamond handle in the middle: drag it to shape the curve,
-  double-click it (or use Reset curve) to go back to the automatic curve
+  double-click it (or use Reset curve) to go back to the automatic curve.
+  Labels: double-click a connector (or select it and press Enter, or use the T button)
+  to type a label. The line breaks around the text, the label follows the line when
+  items move, and you can drag it along the line. Clearing the text removes it.
+  With a labeled connector selected, its toolbar sets the label's text size and color
 - Snapping: moving or resizing aligns edges and centers with items on screen, with pink
   alignment guides; hold Alt to move freely
 - Pen (P): freehand drawing with 6 colors and 3 widths (widths are in screen pixels at
   the zoom you draw at). Strokes are smoothed, are selected by clicking the line
   itself, and can be moved, resized, recolored, copied and exported like other items
+- Highlighter (Shift+P, or the mode switch at the top of the pen options): wide,
+  see-through strokes in 5 colors and 3 widths that let text and shapes show through.
+  The pen and highlighter each remember their own color and width
+- Eraser (E, or the third button in the pen options): rubs out only the part of a pen or
+  highlighter stroke it passes over, splitting the stroke where needed. A vertical slider
+  in the pen options sets its size (4–80 px), with a matching circle cursor; each drag is
+  one undo step. It never erases sticky notes,
+  shapes, text, frames or connectors
 - Frames (F): titled white areas that sit behind everything. Drag a frame by its title to
   move it with everything inside (items whose center is in it); click its body to
   marquee-select inside; double-click the title to rename; duplicating a frame copies its contents
@@ -45,6 +57,8 @@ npm run dev
 - Inline text editing (double-click or Enter), color palette, bring to front / send to back
 - Undo/redo, duplicate, copy/cut/paste, delete, arrow-key nudge
 - Zoom controls and fit-to-content
+- Keyboard shortcuts panel: the round ? button next to the zoom controls (or press ?)
+  lists every shortcut by group; shows Cmd/Option keys on a Mac
 - Auto-saves to `localStorage`
 - JSON export/import from the niro menu (top-left): Export (Ctrl+S) downloads the board;
   Open (Ctrl+O) replaces the board after confirming; Add drops a file in at the screen
@@ -56,34 +70,36 @@ npm run dev
 | Key | Action |
 | --- | --- |
 | V / H / N / T / R / O / L / P / F | Select / Hand / Sticky / Text / Rectangle / Ellipse / Connector / Pen / Frame |
+| Shift+P / E | Highlighter / Eraser |
 | Alt (while dragging) | Disable snapping |
 | Ctrl+Z, Ctrl+Shift+Z / Ctrl+Y | Undo, redo |
 | Ctrl+D, Ctrl+C / X / V | Duplicate, copy / cut / paste |
 | Ctrl+S, Ctrl+O | Export JSON, open JSON (replace board) |
 | Ctrl+A, Esc | Select all, deselect |
 | Del / Backspace | Delete |
-| Enter, Esc | Edit selected item, finish editing |
+| Enter, Esc | Edit selected item or connector label, finish editing |
 | Arrows (Shift = 10px) | Nudge |
 | ] / [ | Bring to front / send to back |
 | Ctrl+= / Ctrl+- / Ctrl+0 / Shift+1 | Zoom in / out / 100% / fit |
+| ? | Show keyboard shortcuts |
 
 ## Code map
 
 - `src/store.ts`: board state, actions, history, persistence subscription
 - `src/geometry.ts`: camera math (screen and world coordinates), hit-testing, resize
-- `src/connectors.ts`: connector endpoints, attaching, path geometry (straight/elbow/curved), arrowheads
+- `src/connectors.ts`: connector endpoints, attaching, path geometry (straight/elbow/curved), arrowheads, label positions
 - `src/snapping.ts`: edge/center snapping and alignment guides
 - `src/frames.ts`: frame membership and render order
-- `src/pen.ts`: pen stroke smoothing, simplification and normalized storage
+- `src/pen.ts`: pen and highlighter colors and widths, stroke smoothing, simplification, normalized storage, partial erasing
+- `src/shortcuts.ts`: shortcut list for the shortcuts panel, toolbar tooltips and tool keys
 - `src/boardFile.ts`: JSON file format, validation, and remapping for import
 - `src/components/Canvas.tsx`: viewport, pointer gestures (pan, move, resize, marquee, create), wheel
 - `src/components/ItemView.tsx`: item rendering and inline text editor
-- `src/components/SelectionOverlay.tsx`, `ContextToolbar.tsx`, `Toolbar.tsx`, `ZoomControls.tsx`: UI chrome
+- `src/components/SelectionOverlay.tsx`, `ContextToolbar.tsx`, `Toolbar.tsx`, `ZoomControls.tsx`, `ShortcutsHelp.tsx`: UI chrome
 
 ## Roadmap ideas
 
-1. Connector labels, eraser and highlighter for the pen
-2. Equal-spacing guides, nested frames, presenting frames as slides
-3. Viewport culling for very large boards
-4. Multiple boards, export to PNG/SVG
-5. Real-time collaboration (Yjs + a WebSocket server), then accounts
+1. Equal-spacing guides, nested frames, presenting frames as slides
+2. Viewport culling for very large boards
+3. Multiple boards, export to PNG/SVG
+4. Real-time collaboration (Yjs + a WebSocket server), then accounts

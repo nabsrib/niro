@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Box, Camera, Connector, Endpoint, Item, Side, Tool, Vec } from './types';
+import type { Box, Camera, Connector, Endpoint, Item, PenMode, Side, Tool, Vec } from './types';
 import { boundsOf, clampZoom, uid, zoomCameraAt } from './geometry';
 import { connectorGeometry, makeConnector, resolveConnector } from './connectors';
 import { OPPOSITE, canQuickCreate, quickCreateBox } from './quickCreate';
@@ -7,7 +7,7 @@ import { loadBoard, saveBoard } from './persistence';
 import { withFrameChildren } from './frames';
 import type { Guide } from './snapping';
 import { prepareForInsert, type BoardContent } from './boardFile';
-import { PEN_COLORS, PEN_WIDTHS } from './pen';
+import { ERASER_DEFAULT, HIGHLIGHTER_COLORS, HIGHLIGHTER_WIDTHS, PEN_COLORS, PEN_WIDTHS } from './pen';
 
 type Snapshot = {
   items: Record<string, Item>;
@@ -15,7 +15,7 @@ type Snapshot = {
   connectors: Record<string, Connector>;
 };
 type Clip = { items: Item[]; connectors: Connector[] };
-type ConnectorPatch = Partial<Pick<Connector, 'style' | 'startArrow' | 'endArrow' | 'strokeWidth' | 'stroke' | 'bend'>>;
+type ConnectorPatch = Partial<Pick<Connector, 'style' | 'startArrow' | 'endArrow' | 'strokeWidth' | 'stroke' | 'bend' | 'label' | 'labelAt' | 'labelSize' | 'labelColor'>>;
 
 const HISTORY_LIMIT = 200;
 const PASTE_OFFSET = 24;
@@ -42,6 +42,12 @@ export interface BoardState {
   notice: { text: string; kind: 'info' | 'error' } | null;
   /** Pen tool settings: color and width in screen pixels. */
   pen: { color: string; width: number };
+  /** Highlighter settings, kept apart from the pen so each remembers its own. */
+  highlighter: { color: string; width: number };
+  /** Whether the pen tool draws with the pen or the highlighter, or erases. */
+  penMode: PenMode;
+  /** Eraser settings: diameter in screen pixels. */
+  eraser: { size: number };
   past: Snapshot[];
   future: Snapshot[];
   clipboard: Clip;
@@ -59,6 +65,9 @@ export interface BoardState {
   setGuides(guides: Guide[]): void;
   showNotice(text: string, kind?: 'info' | 'error'): void;
   setPen(pen: Partial<BoardState['pen']>): void;
+  setHighlighter(highlighter: Partial<BoardState['highlighter']>): void;
+  setPenMode(mode: PenMode): void;
+  setEraser(eraser: Partial<BoardState['eraser']>): void;
 
   /** Record the current board state so the next change can be undone. */
   checkpoint(): void;
@@ -84,6 +93,11 @@ export interface BoardState {
   styleConnectors(ids: string[], patch: ConnectorPatch): void;
   /** Delete items and/or connectors. */
   deleteItems(ids: string[]): void;
+  /**
+   * Swap each listed item for the given replacement items, at its place in the
+   * z-order (used by the eraser to split strokes). Records no history.
+   */
+  replaceItems(changes: Record<string, Item[]>): void;
   setSelected(ids: string[]): void;
   selectAll(): void;
   startEditing(id: string): void;
@@ -109,6 +123,31 @@ const snapshot = (s: BoardState): Snapshot => ({
 
 const exists = (s: Snapshot, id: string) => !!(s.items[id] || s.connectors[id]);
 
+/**
+ * Connectors after the items in `gone` are removed: connectors in `gone` are
+ * dropped, and an end attached to a removed item becomes a free point where it was.
+ */
+function detachConnectors(s: BoardState, gone: Set<string>): Record<string, Connector> {
+  const connectors: Record<string, Connector> = {};
+  for (const c of Object.values(s.connectors)) {
+    if (gone.has(c.id)) continue;
+    const detachFrom = c.from.kind === 'item' && gone.has(c.from.itemId);
+    const detachTo = c.to.kind === 'item' && gone.has(c.to.itemId);
+    if (!detachFrom && !detachTo) {
+      connectors[c.id] = c;
+      continue;
+    }
+    const r = resolveConnector(c, s.items);
+    if (!r) continue;
+    connectors[c.id] = {
+      ...c,
+      from: detachFrom ? { kind: 'point', x: r.a.x, y: r.a.y } : c.from,
+      to: detachTo ? { kind: 'point', x: r.b.x, y: r.b.y } : c.to,
+    };
+  }
+  return connectors;
+}
+
 const movePoint = (e: Endpoint, dx: number, dy: number): Endpoint =>
   e.kind === 'point' ? { kind: 'point', x: e.x + dx, y: e.y + dy } : e;
 
@@ -127,6 +166,9 @@ export const useBoard = create<BoardState>()((set, get) => ({
   guides: [],
   notice: null,
   pen: { color: PEN_COLORS[0], width: PEN_WIDTHS[1] },
+  highlighter: { color: HIGHLIGHTER_COLORS[0], width: HIGHLIGHTER_WIDTHS[1] },
+  penMode: 'pen',
+  eraser: { size: ERASER_DEFAULT },
   past: [],
   future: [],
   clipboard: { items: [], connectors: [] },
@@ -181,6 +223,9 @@ export const useBoard = create<BoardState>()((set, get) => ({
     set({ guides });
   },
   setPen: (pen) => set((s) => ({ pen: { ...s.pen, ...pen } })),
+  setHighlighter: (highlighter) => set((s) => ({ highlighter: { ...s.highlighter, ...highlighter } })),
+  setPenMode: (penMode) => set({ penMode }),
+  setEraser: (eraser) => set((s) => ({ eraser: { ...s.eraser, ...eraser } })),
   showNotice: (text, kind = 'info') => {
     const notice = { text, kind };
     set({ notice });
@@ -307,37 +352,48 @@ export const useBoard = create<BoardState>()((set, get) => ({
       const gone = new Set(ids);
       const items = { ...s.items };
       for (const id of ids) delete items[id];
-      const connectors: Record<string, Connector> = {};
-      for (const c of Object.values(s.connectors)) {
-        if (gone.has(c.id)) continue;
-        // A connector attached to a deleted item keeps that end as a free point.
-        const detachFrom = c.from.kind === 'item' && gone.has(c.from.itemId);
-        const detachTo = c.to.kind === 'item' && gone.has(c.to.itemId);
-        if (!detachFrom && !detachTo) {
-          connectors[c.id] = c;
-          continue;
-        }
-        const r = resolveConnector(c, s.items);
-        if (!r) continue;
-        connectors[c.id] = {
-          ...c,
-          from: detachFrom ? { kind: 'point', x: r.a.x, y: r.a.y } : c.from,
-          to: detachTo ? { kind: 'point', x: r.b.x, y: r.b.y } : c.to,
-        };
-      }
       return {
         items,
-        connectors,
+        connectors: detachConnectors(s, gone),
         order: s.order.filter((id) => !gone.has(id)),
         selected: s.selected.filter((id) => !gone.has(id)),
         editingId: s.editingId && gone.has(s.editingId) ? null : s.editingId,
       };
     });
   },
+  replaceItems: (changes) =>
+    set((s) => {
+      const gone = new Set(Object.keys(changes).filter((id) => s.items[id]));
+      if (!gone.size) return {};
+      const items = { ...s.items };
+      const order: string[] = [];
+      for (const id of s.order) {
+        if (!gone.has(id)) {
+          order.push(id);
+          continue;
+        }
+        delete items[id];
+        for (const piece of changes[id]) {
+          items[piece.id] = piece;
+          order.push(piece.id);
+        }
+      }
+      return {
+        items,
+        order,
+        connectors: detachConnectors(s, gone),
+        selected: s.selected.filter((id) => !gone.has(id)),
+      };
+    }),
   setSelected: (selected) => set({ selected }),
   selectAll: () =>
     set((s) => ({ selected: [...s.order, ...Object.keys(s.connectors)], editingId: null })),
   startEditing: (id) => {
+    // A connector's text is its label.
+    if (get().connectors[id]) {
+      set({ editingId: id, selected: [id], tool: 'select' });
+      return;
+    }
     // Pen strokes have no text to edit.
     if (!get().items[id] || get().items[id].type === 'path') return;
     set({ editingId: id, selected: [id], tool: 'select' });
@@ -345,6 +401,15 @@ export const useBoard = create<BoardState>()((set, get) => ({
   finishEditing: (id, text) => {
     const s = get();
     if (s.editingId === id) set({ editingId: null });
+    const conn = s.connectors[id];
+    if (conn) {
+      // An empty label removes it (and forgets where it was dragged to).
+      const label = text.trim() ? text : undefined;
+      if (conn.label === label) return;
+      s.checkpoint();
+      s.updateConnector(id, { label, labelAt: label ? conn.labelAt : undefined });
+      return;
+    }
     const item = s.items[id];
     if (!item) return;
     if (item.type === 'text' && !text.trim()) {

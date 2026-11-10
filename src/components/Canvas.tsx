@@ -19,6 +19,7 @@ import {
   connectorGeometry,
   endpointAt,
   endpointItem,
+  fractionAlong,
   makeConnector,
   resolveConnector,
 } from '../connectors';
@@ -29,7 +30,7 @@ import type { BoardState } from '../store';
 import { ItemView } from './ItemView';
 import { commitActiveEdit } from '../editing';
 import { importBoardFile } from '../boardActions';
-import { makePathItem, simplify, smoothPath } from '../pen';
+import { eraseStroke, makePathItem, simplify, smoothPath } from '../pen';
 import { ConnectorLayer } from './ConnectorLayer';
 import { SelectionOverlay } from './SelectionOverlay';
 
@@ -79,8 +80,49 @@ type Gesture =
   | { kind: 'reconnect'; id: string; end: 'from' | 'to'; moved: boolean }
   /** Dragging the middle handle of a curved connector to reshape it. */
   | { kind: 'bend'; id: string; moved: boolean }
+  /** Dragging a connector's label along its line. */
+  | { kind: 'label'; id: string; startScreen: Vec; moved: boolean }
   /** Freehand pen stroke; points are in world coordinates. */
-  | { kind: 'draw'; points: Vec[]; color: string; width: number };
+  | { kind: 'draw'; points: Vec[]; color: string; width: number; highlight: boolean }
+  /** Eraser drag: cuts away the parts of pen strokes it passes over. `last` is in world coordinates. */
+  | { kind: 'erase'; last: Vec; started: boolean };
+
+/**
+ * Sweep the eraser from its last point to `to`, cutting the covered parts out of
+ * pen strokes (splitting them where needed). The first cut records one undo step
+ * for the whole drag.
+ */
+function eraseTo(g: Extract<Gesture, { kind: 'erase' }>, to: Vec, s: BoardState) {
+  const radius = s.eraser.size / 2 / s.camera.z;
+  const tolerance = 0.4 / s.camera.z;
+  const changes: Record<string, Item[]> = {};
+  let changed = false;
+  for (const id of s.order) {
+    const it = s.items[id];
+    const pieces = it && eraseStroke(it, g.last, to, radius, tolerance);
+    if (pieces) {
+      changes[id] = pieces;
+      changed = true;
+    }
+  }
+  g.last = to;
+  if (!changed) return;
+  if (!g.started) {
+    g.started = true;
+    s.checkpoint();
+  }
+  s.replaceItems(changes);
+}
+
+/** Circle cursor as big as the eraser (in screen pixels). */
+function eraserCursor(size: number): string {
+  const box = size + 4;
+  const c = box / 2;
+  const svg =
+    `<svg xmlns='http://www.w3.org/2000/svg' width='${box}' height='${box}'>` +
+    `<circle cx='${c}' cy='${c}' r='${size / 2}' fill='white' fill-opacity='0.6' stroke='#1a1a1a' stroke-width='1.5'/></svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${c} ${c}, crosshair`;
+}
 
 /** Two presses on the curve handle within this many ms reset the curve. */
 const DOUBLE_PRESS_MS = 350;
@@ -114,6 +156,10 @@ export function Canvas() {
   const ref = useRef<HTMLDivElement>(null);
   const gesture = useRef<Gesture | null>(null);
   const lastBendPress = useRef<{ id: string; time: number } | null>(null);
+  // Last press on a connector or its label, to spot a double press (opens the
+  // label editor on release; pointer capture retargets the dblclick event).
+  const lastConnectorPress = useRef<{ id: string; time: number } | null>(null);
+  const editOnRelease = useRef<string | null>(null);
   const [marquee, setMarquee] = useState<Box | null>(null);
   const [panning, setPanning] = useState(false);
   const [dropping, setDropping] = useState(false);
@@ -121,6 +167,8 @@ export function Canvas() {
   // without copying the growing point list on every move.
   const [strokeVersion, setStrokeVersion] = useState(0);
   const tool = useBoard((s) => s.tool);
+  const erasing = useBoard((s) => s.tool === 'pen' && s.penMode === 'eraser');
+  const eraserSize = useBoard((s) => s.eraser.size);
   const spaceHeld = useBoard((s) => s.spaceHeld);
   const camera = useBoard((s) => s.camera);
 
@@ -258,9 +306,20 @@ export function Canvas() {
 
     // Pen: start a freehand stroke. Width is in screen pixels, so strokes look
     // the same thickness whatever the zoom level was while drawing.
+    // Eraser: cuts away the parts of pen and highlighter strokes it passes over.
+    if (s.tool === 'pen' && s.penMode === 'eraser') {
+      s.setSelected([]);
+      const g: Extract<Gesture, { kind: 'erase' }> = { kind: 'erase', last: world, started: false };
+      begin(e, g);
+      eraseTo(g, world, s);
+      return;
+    }
+
     if (s.tool === 'pen') {
       s.setSelected([]);
-      begin(e, { kind: 'draw', points: [world], color: s.pen.color, width: s.pen.width / s.camera.z });
+      const highlight = s.penMode === 'highlighter';
+      const { color, width } = highlight ? s.highlighter : s.pen;
+      begin(e, { kind: 'draw', points: [world], color, width: width / s.camera.z, highlight });
       setStrokeVersion((v) => v + 1);
       return;
     }
@@ -289,6 +348,25 @@ export function Canvas() {
         dragged: false,
       });
       return;
+    }
+
+    // Connectors: a double press edits the label; dragging a label slides it along the line.
+    const labelOf = attr(target, 'data-label-of');
+    const connectorHit = labelOf ?? attr(target, 'data-connector-id');
+    if (connectorHit && !e.shiftKey) {
+      const last = lastConnectorPress.current;
+      const now = performance.now();
+      if (last && last.id === connectorHit && now - last.time < DOUBLE_PRESS_MS) {
+        lastConnectorPress.current = null;
+        editOnRelease.current = connectorHit;
+        return;
+      }
+      lastConnectorPress.current = { id: connectorHit, time: now };
+      if (labelOf) {
+        s.setSelected([labelOf]);
+        begin(e, { kind: 'label', id: labelOf, startScreen: screen, moved: false });
+        return;
+      }
     }
 
     // Select / move items and connectors.
@@ -517,6 +595,9 @@ export function Canvas() {
         s.setConnectHint(to.kind === 'item' ? { itemId: to.itemId, side: to.side } : null);
         break;
       }
+      case 'erase':
+        eraseTo(g, world, s);
+        break;
       case 'draw': {
         // Use coalesced events so fast strokes keep their detail.
         const native = e.nativeEvent;
@@ -533,6 +614,18 @@ export function Canvas() {
           }
         }
         if (added) setStrokeVersion((v) => v + 1);
+        break;
+      }
+      case 'label': {
+        const c = s.connectors[g.id];
+        const geo = c && connectorGeometry(c, s.items);
+        if (!geo) return;
+        if (!g.moved) {
+          if (dist(screen, g.startScreen) < DRAG_THRESHOLD) return;
+          g.moved = true;
+          s.checkpoint();
+        }
+        s.updateConnector(g.id, { labelAt: fractionAlong(geo.samples, world) });
         break;
       }
       case 'bend': {
@@ -564,6 +657,14 @@ export function Canvas() {
   };
 
   const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    // Open the label editor only now: focusing it on press would lose focus
+    // again to the browser's own handling of that press.
+    const editId = editOnRelease.current;
+    if (editId) {
+      editOnRelease.current = null;
+      useBoard.getState().startEditing(editId);
+      return;
+    }
     const g = gesture.current;
     if (!g) return;
     gesture.current = null;
@@ -612,7 +713,7 @@ export function Canvas() {
       case 'draw': {
         // Keep the pen active for the next stroke, like Miro.
         const points = simplify(g.points, 0.4 / s.camera.z);
-        s.addItem(makePathItem(points, g.color, g.width));
+        s.addItem(makePathItem(points, g.color, g.width, g.highlight));
         setStrokeVersion((v) => v + 1);
         break;
       }
@@ -650,9 +751,10 @@ export function Canvas() {
   return (
     <div
       ref={ref}
-      className={`viewport${dropping ? ' viewport--drop' : ''}`}
+      className={`viewport${dropping ? ' viewport--drop' : ''}${erasing ? ' viewport--eraser' : ''}`}
       style={{
         cursor,
+        ...(erasing ? ({ '--eraser-cursor': eraserCursor(eraserSize) } as CSSProperties) : {}),
         backgroundSize: `${step}px ${step}px`,
         backgroundPosition: `${camera.x}px ${camera.y}px`,
       }}
@@ -686,7 +788,7 @@ export function Canvas() {
       <div className="overlay">
         <SelectionOverlay />
         {gesture.current?.kind === 'draw' && strokeVersion > 0 && (
-          <svg className="pen-preview">
+          <svg className={`pen-preview${gesture.current.highlight ? ' pen-preview--highlight' : ''}`}>
             <path
               d={smoothPath(
                 gesture.current.points.map((p) => ({
