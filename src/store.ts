@@ -12,7 +12,7 @@ type Snapshot = {
   connectors: Record<string, Connector>;
 };
 type Clip = { items: Item[]; connectors: Connector[] };
-type ConnectorPatch = Partial<Pick<Connector, 'style' | 'startArrow' | 'endArrow' | 'strokeWidth' | 'stroke'>>;
+type ConnectorPatch = Partial<Pick<Connector, 'style' | 'startArrow' | 'endArrow' | 'strokeWidth' | 'stroke' | 'bend'>>;
 
 const HISTORY_LIMIT = 200;
 const PASTE_OFFSET = 24;

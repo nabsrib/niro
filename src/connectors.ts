@@ -1,4 +1,4 @@
-import type { Box, Connector, Endpoint, Item, Side, Vec } from './types';
+import type { Bend, Box, Connector, Endpoint, Item, Side, Vec } from './types';
 import { boundsOf, containsPoint, uid } from './geometry';
 
 export const SIDES: Side[] = ['top', 'right', 'bottom', 'left'];
@@ -218,6 +218,31 @@ export interface ConnectorGeometry {
   /** Points along the path, for hit-testing and bounds. */
   samples: Vec[];
   bounds: Box;
+  /** Middle of the path: where the curve handle sits. */
+  mid: Vec;
+}
+
+/** World position of a bend for a connector running from `a` to `b`. */
+export function bendPoint(a: Vec, b: Vec, bend: Bend): Vec {
+  const chord = sub(b, a);
+  const u = norm(chord);
+  const n = { x: u.y, y: -u.x };
+  const L = len(chord);
+  return add(a, add(mul(u, bend.along * L), mul(n, bend.offset * L)));
+}
+
+/** Bend that makes the curve from `a` to `b` pass through world point `p`. */
+export function bendFromPoint(a: Vec, b: Vec, p: Vec): Bend | null {
+  const chord = sub(b, a);
+  const L = len(chord);
+  if (L < 1e-6) return null;
+  const u = norm(chord);
+  const n = { x: u.y, y: -u.x };
+  const rel = sub(p, a);
+  return {
+    along: (rel.x * u.x + rel.y * u.y) / L,
+    offset: (rel.x * n.x + rel.y * n.y) / L,
+  };
 }
 
 export function connectorGeometry(c: Connector, items: ItemMap): ConnectorGeometry | null {
@@ -231,8 +256,32 @@ export function connectorGeometry(c: Connector, items: ItemMap): ConnectorGeomet
   let tanA: Vec; // direction of travel leaving `a`
   let tanB: Vec; // direction of travel arriving at `b`
   let samples: Vec[];
+  let mid: Vec;
 
-  if (c.style === 'curved') {
+  const sampleCurve = (p0: Vec, p1: Vec, p2: Vec, p3: Vec) =>
+    Array.from({ length: 13 }, (_, i) => bezier(p0, p1, p2, p3, i / 12));
+
+  if (c.style === 'curved' && c.bend && len(sub(b, a)) > 1e-6) {
+    // Two cubic segments that meet smoothly at the bend point P; the tangent
+    // at P runs parallel to the line between the ends.
+    const P = bendPoint(a, b, c.bend);
+    const l1 = Math.max(len(sub(P, a)), 1);
+    const l2 = Math.max(len(sub(b, P)), 1);
+    const da = r.da ?? norm(sub(P, a));
+    const db = r.db ?? norm(sub(P, b));
+    const tP = norm(sub(b, a));
+    const c1 = add(a, mul(da, l1 * 0.5));
+    const c2 = sub(P, mul(tP, l1 * 0.4));
+    const c3 = add(P, mul(tP, l2 * 0.4));
+    const c4 = add(b, mul(db, l2 * 0.5));
+    tanA = norm(sub(c1, a));
+    tanB = norm(sub(b, c4));
+    const a2 = c.startArrow === 'arrow' ? add(a, mul(tanA, trim)) : a;
+    const b2 = c.endArrow === 'arrow' ? sub(b, mul(tanB, trim)) : b;
+    d = `M ${fmt(a2)} C ${fmt(c1)} ${fmt(c2)} ${fmt(P)} C ${fmt(c3)} ${fmt(c4)} ${fmt(b2)}`;
+    samples = [...sampleCurve(a, c1, c2, P), ...sampleCurve(P, c3, c4, b).slice(1)];
+    mid = P;
+  } else if (c.style === 'curved') {
     const k = Math.max(30, len(sub(b, a)) * 0.4);
     const da = r.da ?? norm(sub(b, a));
     const db = r.db ?? norm(sub(a, b));
@@ -243,7 +292,8 @@ export function connectorGeometry(c: Connector, items: ItemMap): ConnectorGeomet
     const a2 = c.startArrow === 'arrow' ? add(a, mul(tanA, trim)) : a;
     const b2 = c.endArrow === 'arrow' ? sub(b, mul(tanB, trim)) : b;
     d = `M ${fmt(a2)} C ${fmt(c1)} ${fmt(c2)} ${fmt(b2)}`;
-    samples = Array.from({ length: 13 }, (_, i) => bezier(a, c1, c2, b, i / 12));
+    samples = sampleCurve(a, c1, c2, b);
+    mid = bezier(a, c1, c2, b, 0.5);
   } else {
     const obstacles = [endpointItem(c.from), endpointItem(c.to)]
       .map((id) => (id ? items[id] : undefined))
@@ -253,6 +303,7 @@ export function connectorGeometry(c: Connector, items: ItemMap): ConnectorGeomet
     tanA = norm(sub(pts[1], pts[0]));
     tanB = norm(sub(pts[pts.length - 1], pts[pts.length - 2]));
     samples = pts.flatMap((p, i) => (i === 0 ? [p] : [mul(add(p, pts[i - 1]), 0.5), p]));
+    mid = samples[Math.floor(samples.length / 2)];
     const trimmed = pts.slice();
     const last = trimmed.length - 1;
     if (c.endArrow === 'arrow') {
@@ -274,6 +325,7 @@ export function connectorGeometry(c: Connector, items: ItemMap): ConnectorGeomet
     endHead: c.endArrow === 'arrow' ? arrowHead(b, tanB, head) : null,
     samples,
     bounds: boundsOf(samples.map((p) => ({ x: p.x, y: p.y, w: 0, h: 0 })))!,
+    mid,
   };
 }
 

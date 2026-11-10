@@ -14,7 +14,14 @@ import {
   resizeBox,
   screenToWorld,
 } from '../geometry';
-import { connectorGeometry, endpointAt, endpointItem, makeConnector } from '../connectors';
+import {
+  bendFromPoint,
+  connectorGeometry,
+  endpointAt,
+  endpointItem,
+  makeConnector,
+  resolveConnector,
+} from '../connectors';
 import { ITEM_DEFAULTS, makeItem } from '../defaults';
 import { isFrame, renderOrder, withFrameChildren } from '../frames';
 import { SNAP_DISTANCE, alignmentGuides, snapBox, snapValue } from '../snapping';
@@ -60,7 +67,12 @@ type Gesture =
   /** Drawing a new connector; it is only created once the pointer has moved. */
   | { kind: 'connect'; startScreen: Vec; from: Endpoint; id: string | null }
   /** Dragging one end of an existing connector. */
-  | { kind: 'reconnect'; id: string; end: 'from' | 'to'; moved: boolean };
+  | { kind: 'reconnect'; id: string; end: 'from' | 'to'; moved: boolean }
+  /** Dragging the middle handle of a curved connector to reshape it. */
+  | { kind: 'bend'; id: string; moved: boolean };
+
+/** Two presses on the curve handle within this many ms reset the curve. */
+const DOUBLE_PRESS_MS = 350;
 
 const dist = (a: Vec, b: Vec) => Math.hypot(a.x - b.x, a.y - b.y);
 const attr = (target: Element, name: string) => target.closest(`[${name}]`)?.getAttribute(name) ?? null;
@@ -90,6 +102,7 @@ function snapTargets(s: BoardState, exclude: Set<string>): Box[] {
 export function Canvas() {
   const ref = useRef<HTMLDivElement>(null);
   const gesture = useRef<Gesture | null>(null);
+  const lastBendPress = useRef<{ id: string; time: number } | null>(null);
   const [marquee, setMarquee] = useState<Box | null>(null);
   const [panning, setPanning] = useState(false);
   const tool = useBoard((s) => s.tool);
@@ -203,6 +216,22 @@ export function Canvas() {
     const endOf = attr(target, 'data-endpoint-of');
     if (end && endOf) {
       begin(e, { kind: 'reconnect', id: endOf, end, moved: false });
+      return;
+    }
+
+    // Drag the curve handle to bend a curved connector; double-press resets it.
+    // (Detected here because pointer capture retargets the dblclick event.)
+    const bendOf = attr(target, 'data-bend-of');
+    if (bendOf) {
+      const last = lastBendPress.current;
+      const now = performance.now();
+      if (last && last.id === bendOf && now - last.time < DOUBLE_PRESS_MS) {
+        lastBendPress.current = null;
+        s.styleConnectors([bendOf], { bend: null });
+        return;
+      }
+      lastBendPress.current = { id: bendOf, time: now };
+      begin(e, { kind: 'bend', id: bendOf, moved: false });
       return;
     }
 
@@ -456,6 +485,18 @@ export function Canvas() {
         const to = endpointAt(world, s.items, s.order, s.camera.z, endpointItem(g.from));
         s.updateConnector(g.id, { to });
         s.setConnectHint(to.kind === 'item' ? { itemId: to.itemId, side: to.side } : null);
+        break;
+      }
+      case 'bend': {
+        const c = s.connectors[g.id];
+        const r = c && resolveConnector(c, s.items);
+        if (!r) return;
+        if (!g.moved) {
+          g.moved = true;
+          s.checkpoint();
+        }
+        const bend = bendFromPoint(r.a, r.b, world);
+        if (bend) s.updateConnector(g.id, { bend });
         break;
       }
       case 'reconnect': {

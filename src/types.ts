@@ -32,6 +32,15 @@ export type Endpoint =
   | { kind: 'item'; itemId: string; side: Side | null };
 
 export type ConnectorStyle = 'straight' | 'elbow' | 'curved';
+
+/**
+ * Point a curved connector passes through, relative to the straight line from
+ * its start to its end (both as fractions of that line's length): `along` runs
+ * from start (0) to end (1); `offset` is the sideways distance (positive to the
+ * left of the direction of travel in screen space). Relative values keep the
+ * curve's shape when the connected items move.
+ */
+export type Bend = { along: number; offset: number };
 export type ArrowHead = 'none' | 'arrow';
 
 export interface Connector {
@@ -43,6 +52,8 @@ export interface Connector {
   strokeWidth: number;
   startArrow: ArrowHead;
   endArrow: ArrowHead;
+  /** User-controlled curve shape (curved style only); absent = automatic curve. */
+  bend?: Bend | null;
 }
 
 export type Tool = 'select' | 'hand' | 'connector' | ItemType;

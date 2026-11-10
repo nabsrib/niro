@@ -74,6 +74,13 @@ export const Icons = {
       <path d="M4 19C12 19 12 5 20 5" />
     </Svg>
   ),
+  resetCurve: () => (
+    <Svg>
+      <path d="M4 19C12 19 12 5 20 5" strokeDasharray="2 3" />
+      <path d="M3 12a9 9 0 0115-6.7L20 7" />
+      <path d="M20 3v4h-4" />
+    </Svg>
+  ),
   arrowStart: () => (
     <Svg>
       <path d="M20 12H5" />

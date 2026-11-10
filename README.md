@@ -27,7 +27,9 @@ npm run dev
 - Items: sticky notes, text, rectangles, ellipses (click to place, or drag to size)
 - Connectors: drag from the blue dots around a selected item, or use the Connector tool (L).
   Ends snap to side midpoints or float on the outline; straight, elbow (routes around the
-  connected items) or curved; arrowheads at either end; drag an end to re-attach it
+  connected items) or curved; arrowheads at either end; drag an end to re-attach it.
+  Curved connectors have a diamond handle in the middle: drag it to shape the curve,
+  double-click it (or use Reset curve) to go back to the automatic curve
 - Snapping: moving or resizing aligns edges and centers with items on screen, with pink
   alignment guides; hold Alt to move freely
 - Frames (F): titled white areas that sit behind everything. Drag a frame by its title to

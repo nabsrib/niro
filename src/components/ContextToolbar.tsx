@@ -25,6 +25,7 @@ export function ContextToolbar({ box, ids }: { box: ScreenBox; ids: string[] }) 
   const allStyle = (style: ConnectorStyle) => selConns.length > 0 && selConns.every((c) => c.style === style);
   const allStart = selConns.length > 0 && selConns.every((c) => c.startArrow === 'arrow');
   const allEnd = selConns.length > 0 && selConns.every((c) => c.endArrow === 'arrow');
+  const bentIds = selConns.filter((c) => c.style === 'curved' && c.bend).map((c) => c.id);
 
   // Flip below the selection when there is no room above it.
   const above = box.top > 70;
@@ -69,6 +70,16 @@ export function ContextToolbar({ box, ids }: { box: ScreenBox; ids: string[] }) 
           >
             <Icons.arrowEnd />
           </button>
+          {bentIds.length > 0 && (
+            <button
+              className="icon-btn"
+              title="Reset curve"
+              aria-label="Reset curve"
+              onClick={() => s.styleConnectors(bentIds, { bend: null })}
+            >
+              <Icons.resetCurve />
+            </button>
+          )}
           <div className="divider" />
         </>
       )}

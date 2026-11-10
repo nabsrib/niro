@@ -445,3 +445,25 @@ button {
   max-width: none;
   cursor: text;
 }
+
+/* Middle of a selected curved connector: drag to bend the curve. */
+.bend-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  background: #fff;
+  border: 2px solid var(--accent);
+  border-radius: 2px;
+  transform: rotate(45deg);
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.bend-handle--set {
+  background: var(--accent);
+}
+
+.bend-handle:hover {
+  box-shadow: 0 0 0 4px rgba(66, 98, 255, 0.2);
+}

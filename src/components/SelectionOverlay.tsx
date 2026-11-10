@@ -111,6 +111,18 @@ export function SelectionOverlay() {
           );
         })}
 
+      {singleConn && singleGeo && singleConn.style === 'curved' && !editingId && (() => {
+        const p = worldToScreen(singleGeo.mid, camera);
+        return (
+          <div
+            className={`bend-handle${singleConn.bend ? ' bend-handle--set' : ''}`}
+            data-bend-of={singleConn.id}
+            title="Drag to shape the curve · double-click to reset"
+            style={{ left: p.x, top: p.y }}
+          />
+        );
+      })()}
+
       {guides.map((g, i) =>
         g.axis === 'x' ? (
           <div
