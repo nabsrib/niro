@@ -9,6 +9,7 @@ const TOOL_KEYS: Record<string, Tool> = {
   t: 'text',
   r: 'rect',
   o: 'ellipse',
+  l: 'connector',
 };
 
 const isEditable = (t: EventTarget | null) =>

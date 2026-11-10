@@ -1,9 +1,17 @@
 import { create } from 'zustand';
-import type { Camera, Item, Tool, Vec } from './types';
+import type { Box, Camera, Connector, Endpoint, Item, Side, Tool, Vec } from './types';
 import { boundsOf, clampZoom, uid, zoomCameraAt } from './geometry';
+import { connectorGeometry, resolveConnector } from './connectors';
 import { loadBoard, saveBoard } from './persistence';
 
-type Snapshot = { items: Record<string, Item>; order: string[] };
+type Snapshot = {
+  items: Record<string, Item>;
+  order: string[];
+  connectors: Record<string, Connector>;
+};
+type Clip = { items: Item[]; connectors: Connector[] };
+type ConnectorPatch = Partial<Pick<Connector, 'style' | 'startArrow' | 'endArrow' | 'strokeWidth' | 'stroke'>>;
+
 const HISTORY_LIMIT = 200;
 const PASTE_OFFSET = 24;
 
@@ -11,17 +19,21 @@ export interface BoardState {
   items: Record<string, Item>;
   /** Z-order: later ids render on top. */
   order: string[];
+  connectors: Record<string, Connector>;
+  /** Selected item and connector ids (ids are unique across both). */
   selected: string[];
   editingId: string | null;
   tool: Tool;
   camera: Camera;
   viewport: { w: number; h: number };
-  /** True while a drag gesture (move / resize / marquee) is in progress. */
+  /** True while a drag gesture (move / resize / marquee / connect) is in progress. */
   interacting: boolean;
   spaceHeld: boolean;
+  /** Item (and side) a connector end would attach to, for hover feedback. */
+  connectHint: { itemId: string; side: Side | null } | null;
   past: Snapshot[];
   future: Snapshot[];
-  clipboard: Item[];
+  clipboard: Clip;
 
   setTool(tool: Tool): void;
   setCamera(camera: Camera): void;
@@ -32,6 +44,7 @@ export interface BoardState {
   setViewport(w: number, h: number): void;
   setInteracting(v: boolean): void;
   setSpaceHeld(v: boolean): void;
+  setConnectHint(hint: BoardState['connectHint']): void;
 
   /** Record the current board state so the next change can be undone. */
   checkpoint(): void;
@@ -41,6 +54,12 @@ export interface BoardState {
   addItem(item: Item): void;
   /** Patch items without recording history (call checkpoint() first). */
   updateItems(patches: Record<string, Partial<Item>>): void;
+  addConnector(c: Connector): void;
+  /** Patch a connector without recording history (call checkpoint() first). */
+  updateConnector(id: string, patch: Partial<Connector>): void;
+  /** Change connector styling as one undoable step. */
+  styleConnectors(ids: string[], patch: ConnectorPatch): void;
+  /** Delete items and/or connectors. */
   deleteItems(ids: string[]): void;
   setSelected(ids: string[]): void;
   selectAll(): void;
@@ -59,9 +78,21 @@ const initialCamera: Camera = saved?.camera ?? { x: 0, y: 0, z: 1 };
 /** Without a saved camera, put the world origin at the center once the viewport has a size. */
 let needsCentering = !saved?.camera;
 
+const snapshot = (s: BoardState): Snapshot => ({
+  items: s.items,
+  order: s.order,
+  connectors: s.connectors,
+});
+
+const exists = (s: Snapshot, id: string) => !!(s.items[id] || s.connectors[id]);
+
+const movePoint = (e: Endpoint, dx: number, dy: number): Endpoint =>
+  e.kind === 'point' ? { kind: 'point', x: e.x + dx, y: e.y + dy } : e;
+
 export const useBoard = create<BoardState>()((set, get) => ({
   items: saved?.items ?? {},
   order: saved?.order ?? [],
+  connectors: saved?.connectors ?? {},
   selected: [],
   editingId: null,
   tool: 'select',
@@ -69,11 +100,12 @@ export const useBoard = create<BoardState>()((set, get) => ({
   viewport: { w: 0, h: 0 },
   interacting: false,
   spaceHeld: false,
+  connectHint: null,
   past: [],
   future: [],
-  clipboard: [],
+  clipboard: { items: [], connectors: [] },
 
-  setTool: (tool) => set({ tool, editingId: null }),
+  setTool: (tool) => set({ tool, editingId: null, connectHint: null }),
   setCamera: (camera) => set({ camera }),
   panBy: (dx, dy) =>
     set((s) => ({ camera: { ...s.camera, x: s.camera.x + dx, y: s.camera.y + dy } })),
@@ -84,15 +116,20 @@ export const useBoard = create<BoardState>()((set, get) => ({
       camera: zoomCameraAt(s.camera, { x: s.viewport.w / 2, y: s.viewport.h / 2 }, z),
     })),
   zoomToFit: () => {
-    const { items, order, viewport } = get();
-    const b = boundsOf(order.map((id) => items[id]));
+    const { items, order, connectors, viewport } = get();
+    const boxes: Box[] = order.map((id) => items[id]);
+    for (const c of Object.values(connectors)) {
+      const g = connectorGeometry(c, items);
+      if (g) boxes.push(g.bounds);
+    }
+    const b = boundsOf(boxes);
     if (!b) {
       set({ camera: { x: viewport.w / 2, y: viewport.h / 2, z: 1 } });
       return;
     }
     const pad = 80;
     const z = clampZoom(
-      Math.min((viewport.w - pad * 2) / b.w, (viewport.h - pad * 2) / b.h, 1),
+      Math.min((viewport.w - pad * 2) / Math.max(b.w, 1), (viewport.h - pad * 2) / Math.max(b.h, 1), 1),
     );
     set({
       camera: {
@@ -113,10 +150,15 @@ export const useBoard = create<BoardState>()((set, get) => ({
   },
   setInteracting: (interacting) => set({ interacting }),
   setSpaceHeld: (spaceHeld) => set({ spaceHeld }),
+  setConnectHint: (connectHint) => {
+    const cur = get().connectHint;
+    if (cur?.itemId === connectHint?.itemId && cur?.side === connectHint?.side) return;
+    set({ connectHint });
+  },
 
   checkpoint: () =>
     set((s) => ({
-      past: [...s.past, { items: s.items, order: s.order }].slice(-HISTORY_LIMIT),
+      past: [...s.past, snapshot(s)].slice(-HISTORY_LIMIT),
       future: [],
     })),
   undo: () =>
@@ -124,11 +166,10 @@ export const useBoard = create<BoardState>()((set, get) => ({
       const prev = s.past[s.past.length - 1];
       if (!prev) return {};
       return {
-        items: prev.items,
-        order: prev.order,
+        ...prev,
         past: s.past.slice(0, -1),
-        future: [{ items: s.items, order: s.order }, ...s.future],
-        selected: s.selected.filter((id) => prev.items[id]),
+        future: [snapshot(s), ...s.future],
+        selected: s.selected.filter((id) => exists(prev, id)),
         editingId: null,
       };
     }),
@@ -137,11 +178,10 @@ export const useBoard = create<BoardState>()((set, get) => ({
       const next = s.future[0];
       if (!next) return {};
       return {
-        items: next.items,
-        order: next.order,
-        past: [...s.past, { items: s.items, order: s.order }],
+        ...next,
+        past: [...s.past, snapshot(s)],
         future: s.future.slice(1),
-        selected: s.selected.filter((id) => next.items[id]),
+        selected: s.selected.filter((id) => exists(next, id)),
         editingId: null,
       };
     }),
@@ -156,6 +196,25 @@ export const useBoard = create<BoardState>()((set, get) => ({
       for (const id in patches) if (items[id]) items[id] = { ...items[id], ...patches[id] };
       return { items };
     }),
+  addConnector: (c) => {
+    get().checkpoint();
+    set((s) => ({ connectors: { ...s.connectors, [c.id]: c } }));
+  },
+  updateConnector: (id, patch) =>
+    set((s) =>
+      s.connectors[id] ? { connectors: { ...s.connectors, [id]: { ...s.connectors[id], ...patch } } } : {},
+    ),
+  styleConnectors: (ids, patch) => {
+    const s = get();
+    const targets = ids.filter((id) => s.connectors[id]);
+    if (!targets.length) return;
+    s.checkpoint();
+    set((st) => {
+      const connectors = { ...st.connectors };
+      for (const id of targets) connectors[id] = { ...connectors[id], ...patch };
+      return { connectors };
+    });
+  },
   deleteItems: (ids) => {
     if (!ids.length) return;
     get().checkpoint();
@@ -163,8 +222,27 @@ export const useBoard = create<BoardState>()((set, get) => ({
       const gone = new Set(ids);
       const items = { ...s.items };
       for (const id of ids) delete items[id];
+      const connectors: Record<string, Connector> = {};
+      for (const c of Object.values(s.connectors)) {
+        if (gone.has(c.id)) continue;
+        // A connector attached to a deleted item keeps that end as a free point.
+        const detachFrom = c.from.kind === 'item' && gone.has(c.from.itemId);
+        const detachTo = c.to.kind === 'item' && gone.has(c.to.itemId);
+        if (!detachFrom && !detachTo) {
+          connectors[c.id] = c;
+          continue;
+        }
+        const r = resolveConnector(c, s.items);
+        if (!r) continue;
+        connectors[c.id] = {
+          ...c,
+          from: detachFrom ? { kind: 'point', x: r.a.x, y: r.a.y } : c.from,
+          to: detachTo ? { kind: 'point', x: r.b.x, y: r.b.y } : c.to,
+        };
+      }
       return {
         items,
+        connectors,
         order: s.order.filter((id) => !gone.has(id)),
         selected: s.selected.filter((id) => !gone.has(id)),
         editingId: s.editingId && gone.has(s.editingId) ? null : s.editingId,
@@ -172,8 +250,12 @@ export const useBoard = create<BoardState>()((set, get) => ({
     });
   },
   setSelected: (selected) => set({ selected }),
-  selectAll: () => set((s) => ({ selected: [...s.order], editingId: null })),
-  startEditing: (id) => set({ editingId: id, selected: [id], tool: 'select' }),
+  selectAll: () =>
+    set((s) => ({ selected: [...s.order, ...Object.keys(s.connectors)], editingId: null })),
+  startEditing: (id) => {
+    if (!get().items[id]) return;
+    set({ editingId: id, selected: [id], tool: 'select' });
+  },
   finishEditing: (id, text) => {
     const s = get();
     if (s.editingId === id) set({ editingId: null });
@@ -200,27 +282,24 @@ export const useBoard = create<BoardState>()((set, get) => ({
     s.updateItems({ [id]: { text } });
   },
   duplicate: (ids) => {
-    const s = get();
-    const src = ids.map((id) => s.items[id]).filter(Boolean);
-    if (src.length) insertCopies(src);
+    const clip = collect(get(), ids);
+    if (clip.items.length || clip.connectors.length) insertCopies(clip);
   },
-  copy: (ids) => {
-    const s = get();
-    set({ clipboard: ids.map((id) => s.items[id]).filter(Boolean) });
-  },
+  copy: (ids) => set({ clipboard: collect(get(), ids) }),
   paste: () => {
     const { clipboard } = get();
-    if (!clipboard.length) return;
+    if (!clipboard.items.length && !clipboard.connectors.length) return;
     // Keep the pasted copies as the clipboard so repeated pastes cascade.
     set({ clipboard: insertCopies(clipboard) });
   },
   reorder: (ids, where) => {
-    if (!ids.length) return;
-    get().checkpoint();
-    set((s) => {
-      const moving = new Set(ids);
-      const rest = s.order.filter((id) => !moving.has(id));
-      const picked = s.order.filter((id) => moving.has(id));
+    const s = get();
+    const moving = new Set(ids.filter((id) => s.items[id]));
+    if (!moving.size) return;
+    s.checkpoint();
+    set((st) => {
+      const rest = st.order.filter((id) => !moving.has(id));
+      const picked = st.order.filter((id) => moving.has(id));
       return { order: where === 'front' ? [...rest, ...picked] : [...picked, ...rest] };
     });
   },
@@ -232,6 +311,8 @@ export const useBoard = create<BoardState>()((set, get) => ({
     for (const id of ids) {
       const it = s.items[id];
       if (it) patches[id] = { x: it.x + dx, y: it.y + dy };
+      const c = s.connectors[id];
+      if (c) s.updateConnector(id, { from: movePoint(c.from, dx, dy), to: movePoint(c.to, dx, dy) });
     }
     s.updateItems(patches);
   },
@@ -243,40 +324,80 @@ export const useBoard = create<BoardState>()((set, get) => ({
     for (const id of ids) {
       const it = s.items[id];
       if (it) patches[id] = it.type === 'text' ? { color } : { fill: color };
+      if (s.connectors[id]) s.updateConnector(id, { stroke: color });
     }
     s.updateItems(patches);
   },
 }));
 
-function insertCopies(src: Item[]): Item[] {
+/**
+ * Gather `ids` for copying. Connectors running between two copied items come
+ * along automatically; ends attached to items that are not copied become free points.
+ */
+function collect(s: BoardState, ids: string[]): Clip {
+  const idSet = new Set(ids);
+  const items = ids.map((id) => s.items[id]).filter(Boolean);
+  const itemIds = new Set(items.map((it) => it.id));
+  const inside = (e: Endpoint) => e.kind === 'item' && itemIds.has(e.itemId);
+  const connectors: Connector[] = [];
+  for (const c of Object.values(s.connectors)) {
+    if (!idSet.has(c.id) && !(inside(c.from) && inside(c.to))) continue;
+    const r = resolveConnector(c, s.items);
+    if (!r) continue;
+    connectors.push({
+      ...c,
+      from: inside(c.from) ? c.from : { kind: 'point', x: r.a.x, y: r.a.y },
+      to: inside(c.to) ? c.to : { kind: 'point', x: r.b.x, y: r.b.y },
+    });
+  }
+  return { items, connectors };
+}
+
+function insertCopies(clip: Clip): Clip {
   useBoard.getState().checkpoint();
-  const copies = src.map((it) => ({
-    ...it,
-    id: uid(),
-    x: it.x + PASTE_OFFSET,
-    y: it.y + PASTE_OFFSET,
-  }));
+  const idMap = new Map<string, string>();
+  const items = clip.items.map((it) => {
+    const id = uid();
+    idMap.set(it.id, id);
+    return { ...it, id, x: it.x + PASTE_OFFSET, y: it.y + PASTE_OFFSET };
+  });
+  const remap = (e: Endpoint): Endpoint =>
+    e.kind === 'item'
+      ? { ...e, itemId: idMap.get(e.itemId) ?? e.itemId }
+      : movePoint(e, PASTE_OFFSET, PASTE_OFFSET);
+  const connectors = clip.connectors.map((c) => ({ ...c, id: uid(), from: remap(c.from), to: remap(c.to) }));
+
   useBoard.setState((st) => {
-    const items = { ...st.items };
-    for (const c of copies) items[c.id] = c;
+    const nextItems = { ...st.items };
+    for (const it of items) nextItems[it.id] = it;
+    const nextConnectors = { ...st.connectors };
+    for (const c of connectors) nextConnectors[c.id] = c;
     return {
-      items,
-      order: [...st.order, ...copies.map((c) => c.id)],
-      selected: copies.map((c) => c.id),
+      items: nextItems,
+      connectors: nextConnectors,
+      order: [...st.order, ...items.map((it) => it.id)],
+      selected: [...items.map((it) => it.id), ...connectors.map((c) => c.id)],
       editingId: null,
     };
   });
-  return copies;
+  return { items, connectors };
 }
 
 // Persist board + camera to localStorage (debounced).
 let saveTimer: number | undefined;
 useBoard.subscribe((s, prev) => {
-  if (s.items === prev.items && s.order === prev.order && s.camera === prev.camera) return;
+  if (
+    s.items === prev.items &&
+    s.order === prev.order &&
+    s.connectors === prev.connectors &&
+    s.camera === prev.camera
+  ) {
+    return;
+  }
   window.clearTimeout(saveTimer);
   saveTimer = window.setTimeout(() => {
-    const { items, order, camera } = useBoard.getState();
-    saveBoard({ items, order, camera });
+    const { items, order, connectors, camera } = useBoard.getState();
+    saveBoard({ items, order, connectors, camera });
   }, 300);
 });
 

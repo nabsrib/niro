@@ -20,7 +20,32 @@ export interface Item extends Box {
   fontSize: number;
 }
 
-export type Tool = 'select' | 'hand' | ItemType;
+export type Side = 'top' | 'right' | 'bottom' | 'left';
+
+/**
+ * One end of a connector: either a free point on the canvas, or attached to an
+ * item. An attached end with `side: null` floats: it meets the item's outline
+ * wherever the line toward the other end crosses it.
+ */
+export type Endpoint =
+  | { kind: 'point'; x: number; y: number }
+  | { kind: 'item'; itemId: string; side: Side | null };
+
+export type ConnectorStyle = 'straight' | 'elbow' | 'curved';
+export type ArrowHead = 'none' | 'arrow';
+
+export interface Connector {
+  id: string;
+  from: Endpoint;
+  to: Endpoint;
+  style: ConnectorStyle;
+  stroke: string;
+  strokeWidth: number;
+  startArrow: ArrowHead;
+  endArrow: ArrowHead;
+}
+
+export type Tool = 'select' | 'hand' | 'connector' | ItemType;
 
 export const CREATION_TOOLS: ItemType[] = ['sticky', 'text', 'rect', 'ellipse'];
 

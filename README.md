@@ -25,6 +25,9 @@ npm run dev
 - Infinite canvas: wheel to pan, Ctrl/Cmd + wheel or pinch to zoom (5%–800%),
   Space + drag, middle mouse or the Hand tool to pan, dotted grid that adapts to zoom
 - Items: sticky notes, text, rectangles, ellipses (click to place, or drag to size)
+- Connectors: drag from the blue dots around a selected item, or use the Connector tool (L).
+  Ends snap to side midpoints or float on the outline; straight, elbow (routes around the
+  connected items) or curved; arrowheads at either end; drag an end to re-attach it
 - Select, Shift-click and marquee multi-select, move, 8-handle resize
   (sticky notes keep their aspect ratio; Shift locks it for others)
 - Inline text editing (double-click or Enter), color palette, bring to front / send to back
@@ -36,7 +39,7 @@ npm run dev
 
 | Key | Action |
 | --- | --- |
-| V / H / N / T / R / O | Select / Hand / Sticky / Text / Rectangle / Ellipse |
+| V / H / N / T / R / O / L | Select / Hand / Sticky / Text / Rectangle / Ellipse / Connector |
 | Ctrl+Z, Ctrl+Shift+Z / Ctrl+Y | Undo, redo |
 | Ctrl+D, Ctrl+C / X / V | Duplicate, copy / cut / paste |
 | Ctrl+A, Esc | Select all, deselect |
@@ -50,13 +53,14 @@ npm run dev
 
 - `src/store.ts`: board state, actions, history, persistence subscription
 - `src/geometry.ts`: camera math (screen and world coordinates), hit-testing, resize
+- `src/connectors.ts`: connector endpoints, attaching, path geometry (straight/elbow/curved), arrowheads
 - `src/components/Canvas.tsx`: viewport, pointer gestures (pan, move, resize, marquee, create), wheel
 - `src/components/ItemView.tsx`: item rendering and inline text editor
 - `src/components/SelectionOverlay.tsx`, `ContextToolbar.tsx`, `Toolbar.tsx`, `ZoomControls.tsx`: UI chrome
 
 ## Roadmap ideas
 
-1. Connectors/arrows between items, freehand pen
+1. Connector labels, freehand pen
 2. Snapping and alignment guides, frames
 3. Viewport culling for very large boards
 4. Multiple boards and a JSON export/import

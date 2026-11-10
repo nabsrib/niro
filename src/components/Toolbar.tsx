@@ -9,6 +9,7 @@ const TOOLS: { tool: Tool; label: string; key: string }[] = [
   { tool: 'text', label: 'Text', key: 'T' },
   { tool: 'rect', label: 'Rectangle', key: 'R' },
   { tool: 'ellipse', label: 'Ellipse', key: 'O' },
+  { tool: 'connector', label: 'Connector', key: 'L' },
 ];
 
 export function Toolbar() {

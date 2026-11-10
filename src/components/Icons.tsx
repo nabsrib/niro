@@ -48,6 +48,39 @@ export const Icons = {
       <circle cx="12" cy="12" r="8" />
     </Svg>
   ),
+  connector: () => (
+    <Svg>
+      <path d="M4 19C10 19 8 6 18 6" />
+      <path d="M15 3l4 3-3 4" />
+    </Svg>
+  ),
+  lineStraight: () => (
+    <Svg>
+      <path d="M5 19L19 5" />
+    </Svg>
+  ),
+  lineElbow: () => (
+    <Svg>
+      <path d="M4 19h8V5h8" />
+    </Svg>
+  ),
+  lineCurved: () => (
+    <Svg>
+      <path d="M4 19C12 19 12 5 20 5" />
+    </Svg>
+  ),
+  arrowStart: () => (
+    <Svg>
+      <path d="M20 12H5" />
+      <path d="M9 7l-5 5 5 5" fill="currentColor" />
+    </Svg>
+  ),
+  arrowEnd: () => (
+    <Svg>
+      <path d="M4 12h15" />
+      <path d="M15 7l5 5-5 5" fill="currentColor" />
+    </Svg>
+  ),
   undo: () => (
     <Svg>
       <path d="M9 14L4 9l5-5" />

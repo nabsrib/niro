@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useBoard } from '../store';
-import type { Box, Camera, Item, ItemType, Vec } from '../types';
+import type { Box, Camera, Endpoint, Item, ItemType, Side, Vec } from '../types';
 import { isCreationTool } from '../types';
 import {
   HANDLES,
@@ -13,12 +13,16 @@ import {
   resizeBox,
   screenToWorld,
 } from '../geometry';
+import { connectorGeometry, endpointAt, endpointItem, makeConnector } from '../connectors';
 import { ITEM_DEFAULTS, makeItem } from '../defaults';
 import { ItemView } from './ItemView';
+import { ConnectorLayer } from './ConnectorLayer';
 import { SelectionOverlay } from './SelectionOverlay';
 
 /** Screen pixels the pointer must travel before a press becomes a drag. */
 const DRAG_THRESHOLD = 3;
+
+type FreeEnds = { from?: Vec; to?: Vec };
 
 type Gesture =
   | { kind: 'pan'; startScreen: Vec; startCam: Camera }
@@ -27,8 +31,10 @@ type Gesture =
       startScreen: Vec;
       startWorld: Vec;
       origin: Record<string, Vec>;
+      /** Free (unattached) connector ends that travel with the selection. */
+      freeEnds: Record<string, FreeEnds>;
       moved: boolean;
-      /** On a click without drag inside a multi-selection, narrow to this item. */
+      /** On a click without drag inside a multi-selection, narrow to this id. */
       collapseTo: string | null;
     }
   | { kind: 'marquee'; startWorld: Vec; base: string[] }
@@ -40,9 +46,14 @@ type Gesture =
       origin: Record<string, Item>;
       moved: boolean;
     }
-  | { kind: 'create'; startScreen: Vec; startWorld: Vec; id: string; type: ItemType; dragged: boolean };
+  | { kind: 'create'; startScreen: Vec; startWorld: Vec; id: string; type: ItemType; dragged: boolean }
+  /** Drawing a new connector; it is only created once the pointer has moved. */
+  | { kind: 'connect'; startScreen: Vec; from: Endpoint; id: string | null }
+  /** Dragging one end of an existing connector. */
+  | { kind: 'reconnect'; id: string; end: 'from' | 'to'; moved: boolean };
 
 const dist = (a: Vec, b: Vec) => Math.hypot(a.x - b.x, a.y - b.y);
+const attr = (target: Element, name: string) => target.closest(`[${name}]`)?.getAttribute(name) ?? null;
 
 export function Canvas() {
   const ref = useRef<HTMLDivElement>(null);
@@ -105,7 +116,7 @@ export function Canvas() {
   };
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLElement;
+    const target = e.target as Element;
     if (target.closest('[data-editor], [data-ui]')) return;
     const s = useBoard.getState();
     if (s.editingId) (document.activeElement as HTMLElement | null)?.blur();
@@ -123,17 +134,42 @@ export function Canvas() {
     if (e.button !== 0) return;
 
     // Resize via a selection handle.
-    const handle = target.closest<HTMLElement>('[data-handle]')?.dataset.handle;
+    const handle = attr(target, 'data-handle');
     if (handle && s.selected.length) {
       const sel = s.selected.map((id) => s.items[id]).filter(Boolean);
-      begin(e, {
-        kind: 'resize',
-        startWorld: world,
-        dir: HANDLES[handle],
-        bounds: boundsOf(sel)!,
-        origin: Object.fromEntries(sel.map((it) => [it.id, it])),
-        moved: false,
-      });
+      if (sel.length) {
+        begin(e, {
+          kind: 'resize',
+          startWorld: world,
+          dir: HANDLES[handle],
+          bounds: boundsOf(sel)!,
+          origin: Object.fromEntries(sel.map((it) => [it.id, it])),
+          moved: false,
+        });
+        return;
+      }
+    }
+
+    // Drag out a connector from one of the side dots of the selected item.
+    const side = attr(target, 'data-connect-side') as Side | null;
+    const sourceId = attr(target, 'data-connect-item');
+    if (side && sourceId) {
+      begin(e, { kind: 'connect', startScreen: screen, from: { kind: 'item', itemId: sourceId, side }, id: null });
+      return;
+    }
+
+    // Drag an end of the selected connector to re-attach it.
+    const end = attr(target, 'data-endpoint') as 'from' | 'to' | null;
+    const endOf = attr(target, 'data-endpoint-of');
+    if (end && endOf) {
+      begin(e, { kind: 'reconnect', id: endOf, end, moved: false });
+      return;
+    }
+
+    // Connector tool: start from the item under the pointer, or from empty canvas.
+    if (s.tool === 'connector') {
+      const from = endpointAt(world, s.items, s.order, s.camera.z);
+      begin(e, { kind: 'connect', startScreen: screen, from, id: null });
       return;
     }
 
@@ -153,10 +189,10 @@ export function Canvas() {
       return;
     }
 
-    // Select / move.
-    const hitId = target.closest<HTMLElement>('[data-item-id]')?.dataset.itemId ?? null;
-    const selBounds =
-      s.selected.length > 1 ? boundsOf(s.selected.map((id) => s.items[id]).filter(Boolean)) : null;
+    // Select / move items and connectors.
+    const hitId = attr(target, 'data-item-id') ?? attr(target, 'data-connector-id');
+    const selItems = s.selected.map((id) => s.items[id]).filter(Boolean);
+    const selBounds = s.selected.length > 1 ? boundsOf(selItems) : null;
     const inSelection = !!selBounds && containsPoint(selBounds, world) && !e.shiftKey;
 
     if (hitId || inSelection) {
@@ -176,11 +212,27 @@ export function Canvas() {
         }
       }
       const origin: Record<string, Vec> = {};
+      const freeEnds: Record<string, FreeEnds> = {};
       for (const id of selected) {
         const it = s.items[id];
         if (it) origin[id] = { x: it.x, y: it.y };
+        const c = s.connectors[id];
+        if (c) {
+          freeEnds[id] = {
+            from: c.from.kind === 'point' ? { x: c.from.x, y: c.from.y } : undefined,
+            to: c.to.kind === 'point' ? { x: c.to.x, y: c.to.y } : undefined,
+          };
+        }
       }
-      begin(e, { kind: 'move', startScreen: screen, startWorld: world, origin, moved: false, collapseTo });
+      begin(e, {
+        kind: 'move',
+        startScreen: screen,
+        startWorld: world,
+        origin,
+        freeEnds,
+        moved: false,
+        collapseTo,
+      });
       return;
     }
 
@@ -192,10 +244,18 @@ export function Canvas() {
 
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const g = gesture.current;
-    if (!g) return;
     const s = useBoard.getState();
     const screen = local(e);
     const world = screenToWorld(screen, s.camera);
+
+    if (!g) {
+      // Hover feedback for the connector tool: highlight the item we'd attach to.
+      if (s.tool === 'connector') {
+        const ep = endpointAt(world, s.items, s.order, s.camera.z);
+        s.setConnectHint(ep.kind === 'item' ? { itemId: ep.itemId, side: ep.side } : null);
+      }
+      return;
+    }
 
     switch (g.kind) {
       case 'pan': {
@@ -217,6 +277,13 @@ export function Canvas() {
         const patches: Record<string, Partial<Item>> = {};
         for (const id in g.origin) patches[id] = { x: g.origin[id].x + dx, y: g.origin[id].y + dy };
         s.updateItems(patches);
+        for (const id in g.freeEnds) {
+          const { from, to } = g.freeEnds[id];
+          const patch: { from?: Endpoint; to?: Endpoint } = {};
+          if (from) patch.from = { kind: 'point', x: from.x + dx, y: from.y + dy };
+          if (to) patch.to = { kind: 'point', x: to.x + dx, y: to.y + dy };
+          if (patch.from || patch.to) s.updateConnector(id, patch);
+        }
         break;
       }
       case 'resize': {
@@ -257,6 +324,10 @@ export function Canvas() {
         const rect = normalizeRect(g.startWorld, world);
         setMarquee(rect);
         const hits = s.order.filter((id) => intersects(s.items[id], rect));
+        for (const c of Object.values(s.connectors)) {
+          const geo = connectorGeometry(c, s.items);
+          if (geo?.samples.some((p) => containsPoint(rect, p))) hits.push(c.id);
+        }
         const next = Array.from(new Set([...g.base, ...hits]));
         if (next.length !== s.selected.length || next.some((id, i) => id !== s.selected[i])) {
           s.setSelected(next);
@@ -288,6 +359,32 @@ export function Canvas() {
             h: Math.max(r.h, MIN_ITEM_SIZE),
           },
         });
+        break;
+      }
+      case 'connect': {
+        if (!g.id) {
+          if (dist(screen, g.startScreen) < DRAG_THRESHOLD) return;
+          const c = makeConnector(g.from, { kind: 'point', x: world.x, y: world.y });
+          s.addConnector(c);
+          s.setSelected([]);
+          g.id = c.id;
+        }
+        const to = endpointAt(world, s.items, s.order, s.camera.z, endpointItem(g.from));
+        s.updateConnector(g.id, { to });
+        s.setConnectHint(to.kind === 'item' ? { itemId: to.itemId, side: to.side } : null);
+        break;
+      }
+      case 'reconnect': {
+        const c = s.connectors[g.id];
+        if (!c) return;
+        if (!g.moved) {
+          g.moved = true;
+          s.checkpoint();
+        }
+        const other = g.end === 'from' ? c.to : c.from;
+        const ep = endpointAt(world, s.items, s.order, s.camera.z, endpointItem(other));
+        s.updateConnector(g.id, { [g.end]: ep });
+        s.setConnectHint(ep.kind === 'item' ? { itemId: ep.itemId, side: ep.side } : null);
         break;
       }
     }
@@ -323,14 +420,28 @@ export function Canvas() {
         if (g.type === 'sticky' || g.type === 'text') s.startEditing(g.id);
         break;
       }
+      case 'connect':
+        s.setConnectHint(null);
+        if (g.id) {
+          s.setTool('select');
+          s.setSelected([g.id]);
+        }
+        break;
+      case 'reconnect':
+        s.setConnectHint(null);
+        break;
     }
   };
 
+  const onPointerLeave = () => {
+    if (!gesture.current) useBoard.getState().setConnectHint(null);
+  };
+
   const onDoubleClick = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
+    const target = e.target as Element;
     if (target.closest('[data-editor], [data-ui]')) return;
     const s = useBoard.getState();
-    const id = target.closest<HTMLElement>('[data-item-id]')?.dataset.itemId;
+    const id = attr(target, 'data-item-id');
     if (id && s.tool === 'select') s.startEditing(id);
   };
 
@@ -343,7 +454,7 @@ export function Canvas() {
     ? 'grabbing'
     : tool === 'hand' || spaceHeld
       ? 'grab'
-      : isCreationTool(tool)
+      : isCreationTool(tool) || tool === 'connector'
         ? 'crosshair'
         : 'default';
 
@@ -360,6 +471,7 @@ export function Canvas() {
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onPointerLeave={onPointerLeave}
       onDoubleClick={onDoubleClick}
       onContextMenu={(e) => e.preventDefault()}
     >
@@ -382,7 +494,7 @@ export function Canvas() {
   );
 }
 
-/** World layer: every item lives here; the camera is one CSS transform. */
+/** World layer: items and connectors live here; the camera is one CSS transform. */
 function World() {
   const camera = useBoard((s) => s.camera);
   const order = useBoard((s) => s.order);
@@ -394,6 +506,7 @@ function World() {
       {order.map((id) => (
         <ItemView key={id} id={id} />
       ))}
+      <ConnectorLayer />
     </div>
   );
 }

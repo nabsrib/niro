@@ -217,6 +217,10 @@ button {
   background: var(--panel);
   border-radius: 8px;
   box-shadow: var(--shadow);
+  /* Stay clear of the logo and hint on short windows; scroll if needed. */
+  max-height: calc(100% - 140px);
+  overflow-y: auto;
+  scrollbar-width: none;
 }
 
 .brand {
@@ -298,4 +302,95 @@ button {
 
 .swatch--active {
   box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--accent);
+}
+
+/* ---------- connectors ---------- */
+
+.connectors {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.connector__hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14px;
+  vector-effect: non-scaling-stroke;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.connector__selection {
+  fill: none;
+  stroke: var(--accent);
+  stroke-opacity: 0.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Dots around a selected item: drag one to draw a connector. */
+.connect-dot {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px var(--accent);
+  pointer-events: auto;
+  cursor: crosshair;
+  opacity: 0.85;
+  transition: transform 0.1s ease;
+}
+
+.connect-dot:hover {
+  transform: scale(1.3);
+  opacity: 1;
+}
+
+/* Ends of a selected connector: drag to re-attach. */
+.end-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--accent);
+  pointer-events: auto;
+  cursor: move;
+}
+
+.end-handle--attached {
+  background: var(--accent);
+}
+
+/* Item a connector end would attach to. */
+.attach-target {
+  position: absolute;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.attach-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--accent);
+}
+
+.attach-dot--active {
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  background: var(--accent);
 }
