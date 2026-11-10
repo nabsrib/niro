@@ -25,7 +25,7 @@ import {
 } from '../connectors';
 import { ITEM_DEFAULTS, makeItem } from '../defaults';
 import { isFrame, renderOrder, withFrameChildren } from '../frames';
-import { SNAP_DISTANCE, alignmentGuides, snapBox, snapValue } from '../snapping';
+import { SNAP_DISTANCE, alignmentGuides, snapMove, snapValue } from '../snapping';
 import type { BoardState } from '../store';
 import { ItemView } from './ItemView';
 import { commitActiveEdit } from '../editing';
@@ -169,6 +169,7 @@ export function Canvas() {
   const tool = useBoard((s) => s.tool);
   const erasing = useBoard((s) => s.tool === 'pen' && s.penMode === 'eraser');
   const eraserSize = useBoard((s) => s.eraser.size);
+  const presenting = useBoard((s) => s.presenting !== null);
   const spaceHeld = useBoard((s) => s.spaceHeld);
   const camera = useBoard((s) => s.camera);
 
@@ -193,6 +194,8 @@ export function Canvas() {
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const s = useBoard.getState();
+      // Presenting: the camera belongs to the slides.
+      if (s.presenting) return;
       const r = el.getBoundingClientRect();
       const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? r.height : 1;
       let dx = e.deltaX * unit;
@@ -231,6 +234,8 @@ export function Canvas() {
     const target = e.target as Element;
     if (target.closest('[data-editor], [data-ui]')) return;
     const s = useBoard.getState();
+    // Presenting: the board is view-only.
+    if (s.presenting) return;
     if (s.editingId) {
       commitActiveEdit();
       (document.activeElement as HTMLElement | null)?.blur();
@@ -471,12 +476,12 @@ export function Canvas() {
         }
         let dx = world.x - g.startWorld.x;
         let dy = world.y - g.startWorld.y;
-        // Snap edges/centers to nearby items; hold Alt to move freely.
+        // Snap to aligned edges/centers or equal spacing; hold Alt to move freely.
         if (g.bounds && g.targets.length && !e.altKey) {
-          const snap = snapBox(shift(g.bounds, { x: dx, y: dy }), g.targets, SNAP_DISTANCE / s.camera.z);
-          dx += snap.x;
-          dy += snap.y;
-          s.setGuides(alignmentGuides(shift(g.bounds, { x: dx, y: dy }), g.targets));
+          const snap = snapMove(shift(g.bounds, { x: dx, y: dy }), g.targets, SNAP_DISTANCE / s.camera.z);
+          dx += snap.offset.x;
+          dy += snap.offset.y;
+          s.setGuides(snap.guides, snap.gaps);
         } else {
           s.setGuides([]);
         }
@@ -728,6 +733,7 @@ export function Canvas() {
     const target = e.target as Element;
     if (target.closest('[data-editor], [data-ui]')) return;
     const s = useBoard.getState();
+    if (s.presenting) return;
     const id = attr(target, 'data-item-id');
     if (!id || s.tool !== 'select') return;
     // On a frame, only the title is editable.
@@ -751,7 +757,7 @@ export function Canvas() {
   return (
     <div
       ref={ref}
-      className={`viewport${dropping ? ' viewport--drop' : ''}${erasing ? ' viewport--eraser' : ''}`}
+      className={`viewport${dropping ? ' viewport--drop' : ''}${erasing ? ' viewport--eraser' : ''}${presenting ? ' viewport--presenting' : ''}`}
       style={{
         cursor,
         ...(erasing ? ({ '--eraser-cursor': eraserCursor(eraserSize) } as CSSProperties) : {}),
@@ -786,7 +792,7 @@ export function Canvas() {
     >
       <World />
       <div className="overlay">
-        <SelectionOverlay />
+        {!presenting && <SelectionOverlay />}
         {gesture.current?.kind === 'draw' && strokeVersion > 0 && (
           <svg className={`pen-preview${gesture.current.highlight ? ' pen-preview--highlight' : ''}`}>
             <path

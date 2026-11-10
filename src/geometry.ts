@@ -23,6 +23,15 @@ export function zoomCameraAt(c: Camera, screen: Vec, z: number): Camera {
   return { x: screen.x - w.x * nz, y: screen.y - w.y * nz, z: nz };
 }
 
+/**
+ * Camera that shows `b` centered in a `w`×`h` viewport with `pad` screen pixels
+ * around it, zoomed in no further than `maxZ`.
+ */
+export function fitCamera(b: Box, w: number, h: number, pad: number, maxZ = MAX_ZOOM): Camera {
+  const z = clampZoom(Math.min((w - pad * 2) / Math.max(b.w, 1), (h - pad * 2) / Math.max(b.h, 1), maxZ));
+  return { z, x: w / 2 - (b.x + b.w / 2) * z, y: h / 2 - (b.y + b.h / 2) * z };
+}
+
 export function normalizeRect(a: Vec, b: Vec): Box {
   return {
     x: Math.min(a.x, b.x),

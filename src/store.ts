@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import type { Box, Camera, Connector, Endpoint, Item, PenMode, Side, Tool, Vec } from './types';
-import { boundsOf, clampZoom, uid, zoomCameraAt } from './geometry';
+import { boundsOf, fitCamera, uid, zoomCameraAt } from './geometry';
 import { connectorGeometry, makeConnector, resolveConnector } from './connectors';
 import { OPPOSITE, canQuickCreate, quickCreateBox } from './quickCreate';
 import { loadBoard, saveBoard } from './persistence';
-import { withFrameChildren } from './frames';
-import type { Guide } from './snapping';
+import { isFrame, slideFrames, withFrameChildren } from './frames';
+import type { Gap, Guide } from './snapping';
 import { prepareForInsert, type BoardContent } from './boardFile';
 import { ERASER_DEFAULT, HIGHLIGHTER_COLORS, HIGHLIGHTER_WIDTHS, PEN_COLORS, PEN_WIDTHS } from './pen';
 
@@ -38,6 +38,8 @@ export interface BoardState {
   connectHint: { itemId: string; side: Side | null } | null;
   /** Alignment guides shown while moving or resizing. */
   guides: Guide[];
+  /** Equal-spacing gap markers shown while moving. */
+  gaps: Gap[];
   /** Short message shown at the bottom of the screen (e.g. after an import). */
   notice: { text: string; kind: 'info' | 'error' } | null;
   /** Pen tool settings: color and width in screen pixels. */
@@ -46,6 +48,11 @@ export interface BoardState {
   highlighter: { color: string; width: number };
   /** Whether the pen tool draws with the pen or the highlighter, or erases. */
   penMode: PenMode;
+  /**
+   * Presentation mode: index of the current slide in `slideFrames` and the
+   * camera to restore on exit. Not saved and not part of undo history.
+   */
+  presenting: { index: number; returnTo: Camera } | null;
   /** Eraser settings: diameter in screen pixels. */
   eraser: { size: number };
   past: Snapshot[];
@@ -62,12 +69,17 @@ export interface BoardState {
   setInteracting(v: boolean): void;
   setSpaceHeld(v: boolean): void;
   setConnectHint(hint: BoardState['connectHint']): void;
-  setGuides(guides: Guide[]): void;
+  setGuides(guides: Guide[], gaps?: Gap[]): void;
   showNotice(text: string, kind?: 'info' | 'error'): void;
   setPen(pen: Partial<BoardState['pen']>): void;
   setHighlighter(highlighter: Partial<BoardState['highlighter']>): void;
   setPenMode(mode: PenMode): void;
   setEraser(eraser: Partial<BoardState['eraser']>): void;
+  /** Present top-level frames as slides, starting at the selected frame if any. */
+  startPresenting(): void;
+  stopPresenting(): void;
+  /** Go to a slide; clamped to the first/last slide. */
+  goToSlide(index: number): void;
 
   /** Record the current board state so the next change can be undone. */
   checkpoint(): void;
@@ -164,11 +176,13 @@ export const useBoard = create<BoardState>()((set, get) => ({
   spaceHeld: false,
   connectHint: null,
   guides: [],
+  gaps: [],
   notice: null,
   pen: { color: PEN_COLORS[0], width: PEN_WIDTHS[1] },
   highlighter: { color: HIGHLIGHTER_COLORS[0], width: HIGHLIGHTER_WIDTHS[1] },
   penMode: 'pen',
   eraser: { size: ERASER_DEFAULT },
+  presenting: null,
   past: [],
   future: [],
   clipboard: { items: [], connectors: [] },
@@ -195,17 +209,7 @@ export const useBoard = create<BoardState>()((set, get) => ({
       set({ camera: { x: viewport.w / 2, y: viewport.h / 2, z: 1 } });
       return;
     }
-    const pad = 80;
-    const z = clampZoom(
-      Math.min((viewport.w - pad * 2) / Math.max(b.w, 1), (viewport.h - pad * 2) / Math.max(b.h, 1), 1),
-    );
-    set({
-      camera: {
-        z,
-        x: viewport.w / 2 - (b.x + b.w / 2) * z,
-        y: viewport.h / 2 - (b.y + b.h / 2) * z,
-      },
-    });
+    set({ camera: fitCamera(b, viewport.w, viewport.h, 80, 1) });
   },
   setViewport: (w, h) => {
     if (needsCentering && w > 0 && h > 0) {
@@ -218,14 +222,38 @@ export const useBoard = create<BoardState>()((set, get) => ({
   },
   setInteracting: (interacting) => set({ interacting }),
   setSpaceHeld: (spaceHeld) => set({ spaceHeld }),
-  setGuides: (guides) => {
-    if (!guides.length && !get().guides.length) return;
-    set({ guides });
+  setGuides: (guides, gaps = []) => {
+    const s = get();
+    if (!guides.length && !gaps.length && !s.guides.length && !s.gaps.length) return;
+    set({ guides, gaps });
   },
   setPen: (pen) => set((s) => ({ pen: { ...s.pen, ...pen } })),
   setHighlighter: (highlighter) => set((s) => ({ highlighter: { ...s.highlighter, ...highlighter } })),
   setPenMode: (penMode) => set({ penMode }),
   setEraser: (eraser) => set((s) => ({ eraser: { ...s.eraser, ...eraser } })),
+  startPresenting: () => {
+    const s = get();
+    if (s.presenting) return;
+    const slides = slideFrames(s.items, s.order);
+    if (!slides.length) {
+      s.showNotice('Add a frame (F) to present it as a slide.');
+      return;
+    }
+    const picked = s.selected.find((id) => isFrame(s.items[id]));
+    const index = Math.max(0, slides.findIndex((f) => f.id === picked));
+    set({ presenting: { index, returnTo: s.camera }, selected: [], editingId: null, tool: 'select', connectHint: null });
+  },
+  stopPresenting: () => {
+    const p = get().presenting;
+    if (p) set({ presenting: null, camera: p.returnTo });
+  },
+  goToSlide: (index) => {
+    const s = get();
+    if (!s.presenting) return;
+    const last = slideFrames(s.items, s.order).length - 1;
+    const next = Math.min(Math.max(index, 0), Math.max(last, 0));
+    if (next !== s.presenting.index) set({ presenting: { ...s.presenting, index: next } });
+  },
   showNotice: (text, kind = 'info') => {
     const notice = { text, kind };
     set({ notice });

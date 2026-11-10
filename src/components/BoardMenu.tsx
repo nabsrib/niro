@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { exportBoard, pickBoardFile } from '../boardActions';
 import { Icons } from './Icons';
+import { useBoard } from '../store';
+import { comboText } from '../shortcuts';
 
 /** The "niro" button in the top-left corner, with board file actions. */
 export function BoardMenu() {
@@ -56,6 +58,12 @@ export function BoardMenu() {
           <button role="menuitem" className="menu__item" onClick={run(() => pickBoardFile('add'))}>
             <Icons.plus />
             <span>Add JSON to board…</span>
+          </button>
+          <div className="menu__divider" />
+          <button role="menuitem" className="menu__item" onClick={run(() => useBoard.getState().startPresenting())}>
+            <Icons.play />
+            <span>Present frames as slides</span>
+            <kbd>{comboText(['Alt', 'P'])}</kbd>
           </button>
           <div className="menu__hint">Tip: drop a .json file on the canvas to add it there.</div>
         </div>

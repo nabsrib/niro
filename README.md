@@ -37,7 +37,10 @@ npm run dev
   items move, and you can drag it along the line. Clearing the text removes it.
   With a labeled connector selected, its toolbar sets the label's text size and color
 - Snapping: moving or resizing aligns edges and centers with items on screen, with pink
-  alignment guides; hold Alt to move freely
+  alignment guides. Moving also snaps to equal spacing: centered between two neighbors, or
+  repeating the gap next to a neighbor (A and B are 40 apart, so C snaps 40 past B), with
+  pink gap markers showing the distance. It only pulls within a few pixels of the spot;
+  hold Alt to move freely
 - Pen (P): freehand drawing with 6 colors and 3 widths (widths are in screen pixels at
   the zoom you draw at). Strokes are smoothed, are selected by clicking the line
   itself, and can be moved, resized, recolored, copied and exported like other items
@@ -51,7 +54,13 @@ npm run dev
   shapes, text, frames or connectors
 - Frames (F): titled white areas that sit behind everything. Drag a frame by its title to
   move it with everything inside (items whose center is in it); click its body to
-  marquee-select inside; double-click the title to rename; duplicating a frame copies its contents
+  marquee-select inside; double-click the title to rename; duplicating a frame copies its contents.
+  Frames nest: a frame inside a larger frame belongs to it (items belong to the smallest
+  frame their center is in), draws in front of it, and moves and copies with it
+- Present (top-right button, niro menu or Alt+P): shows the top-level frames as full-screen
+  slides in reading order (rows top to bottom, left to right), starting at the selected frame.
+  The camera glides between frames and everything outside the frame is dimmed. Arrows,
+  Space, PageUp/PageDown, Home/End navigate; Esc exits and restores the view
 - Select, Shift-click and marquee multi-select, move, 8-handle resize
   (sticky notes keep their aspect ratio; Shift locks it for others)
 - Inline text editing (double-click or Enter), color palette, bring to front / send to back
@@ -82,24 +91,26 @@ npm run dev
 | ] / [ | Bring to front / send to back |
 | Ctrl+= / Ctrl+- / Ctrl+0 / Shift+1 | Zoom in / out / 100% / fit |
 | ? | Show keyboard shortcuts |
+| Alt+P | Present frames as slides |
+| → / Space, ←, Home / End, Esc | Presenting: next, previous, first / last, exit |
 
 ## Code map
 
 - `src/store.ts`: board state, actions, history, persistence subscription
 - `src/geometry.ts`: camera math (screen and world coordinates), hit-testing, resize
 - `src/connectors.ts`: connector endpoints, attaching, path geometry (straight/elbow/curved), arrowheads, label positions
-- `src/snapping.ts`: edge/center snapping and alignment guides
-- `src/frames.ts`: frame membership and render order
+- `src/snapping.ts`: edge/center snapping, equal-spacing snapping, alignment guides and gap markers
+- `src/frames.ts`: frame membership (nested), render order, slide order for presenting
 - `src/pen.ts`: pen and highlighter colors and widths, stroke smoothing, simplification, normalized storage, partial erasing
 - `src/shortcuts.ts`: shortcut list for the shortcuts panel, toolbar tooltips and tool keys
 - `src/boardFile.ts`: JSON file format, validation, and remapping for import
 - `src/components/Canvas.tsx`: viewport, pointer gestures (pan, move, resize, marquee, create), wheel
 - `src/components/ItemView.tsx`: item rendering and inline text editor
 - `src/components/SelectionOverlay.tsx`, `ContextToolbar.tsx`, `Toolbar.tsx`, `ZoomControls.tsx`, `ShortcutsHelp.tsx`: UI chrome
+- `src/components/Presenter.tsx`: Present button and presentation mode (dim mask, camera glide, slide controls)
 
 ## Roadmap ideas
 
-1. Equal-spacing guides, nested frames, presenting frames as slides
-2. Viewport culling for very large boards
-3. Multiple boards, export to PNG/SVG
-4. Real-time collaboration (Yjs + a WebSocket server), then accounts
+1. Viewport culling for very large boards
+2. Multiple boards, export to PNG/SVG
+3. Real-time collaboration (Yjs + a WebSocket server), then accounts

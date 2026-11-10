@@ -83,7 +83,17 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     items: [
       { label: 'Export JSON', combos: [['Mod', 'S']] },
       { label: 'Open JSON (replace board)', combos: [['Mod', 'O']] },
+      { label: 'Present frames as slides', combos: [['Alt', 'P']] },
       { label: 'Show shortcuts', combos: [['?']] },
+    ],
+  },
+  {
+    title: 'Presenting',
+    items: [
+      { label: 'Next slide', combos: [['→'], ['Space']] },
+      { label: 'Previous slide', combos: [['←']] },
+      { label: 'First / last slide', combos: [['Home'], ['End']] },
+      { label: 'Exit', combos: [['Esc']] },
     ],
   },
 ];

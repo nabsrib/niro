@@ -20,6 +20,29 @@ export function useKeyboardShortcuts() {
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
 
+      // Presenting: only slide keys work; everything else (editing, tools) is off.
+      if (s.presenting) {
+        const i = s.presenting.index;
+        const go: Record<string, () => void> = {
+          ArrowRight: () => s.goToSlide(i + 1),
+          ArrowDown: () => s.goToSlide(i + 1),
+          PageDown: () => s.goToSlide(i + 1),
+          ' ': () => s.goToSlide(i + 1),
+          Enter: () => s.goToSlide(i + 1),
+          ArrowLeft: () => s.goToSlide(i - 1),
+          ArrowUp: () => s.goToSlide(i - 1),
+          PageUp: () => s.goToSlide(i - 1),
+          Home: () => s.goToSlide(0),
+          End: () => s.goToSlide(Infinity),
+          Escape: () => s.stopPresenting(),
+        };
+        if (go[e.key]) {
+          e.preventDefault();
+          go[e.key]();
+        }
+        return;
+      }
+
       if (e.code === 'Space') {
         e.preventDefault();
         if (!e.repeat) s.setSpaceHeld(true);
@@ -72,6 +95,12 @@ export function useKeyboardShortcuts() {
             handled = false;
         }
         if (handled) e.preventDefault();
+        return;
+      }
+      // Alt+P presents (checked by key position so Option+P works on a Mac too).
+      if (e.altKey && !e.shiftKey && e.code === 'KeyP') {
+        e.preventDefault();
+        s.startPresenting();
         return;
       }
       if (e.altKey) return;

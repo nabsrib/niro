@@ -94,6 +94,21 @@ export const Icons = {
       <path d="M4 19C12 19 12 5 20 5" />
     </Svg>
   ),
+  chevronLeft: () => (
+    <Svg>
+      <path d="M15 6l-6 6 6 6" />
+    </Svg>
+  ),
+  chevronRight: () => (
+    <Svg>
+      <path d="M9 6l6 6-6 6" />
+    </Svg>
+  ),
+  play: () => (
+    <Svg>
+      <path d="M7 5l12 7-12 7z" />
+    </Svg>
+  ),
   chevronDown: () => (
     <Svg>
       <path d="M7 10l5 5 5-5" />

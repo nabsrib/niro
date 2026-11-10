@@ -36,6 +36,7 @@ export function SelectionOverlay() {
   const interacting = useBoard((s) => s.interacting);
   const hint = useBoard((s) => s.connectHint);
   const guides = useBoard((s) => s.guides);
+  const gaps = useBoard((s) => s.gaps);
 
   const selItems = selected.map((id) => items[id]).filter(Boolean);
   const selConnectors = selected.map((id) => connectors[id]).filter(Boolean);
@@ -175,6 +176,25 @@ export function SelectionOverlay() {
           />
         ),
       )}
+
+      {/* Equal-spacing markers: a line with end ticks across each equal gap, and its size. */}
+      {gaps.map((g, i) => {
+        const a = worldToScreen(g.axis === 'x' ? { x: g.from, y: g.at } : { x: g.at, y: g.from }, camera);
+        const len = (g.to - g.from) * camera.z;
+        return (
+          <div
+            key={`gap${i}`}
+            className={`gap gap--${g.axis}`}
+            style={
+              g.axis === 'x'
+                ? { left: a.x, top: a.y, width: len }
+                : { left: a.x, top: a.y, height: len }
+            }
+          >
+            <span className="gap__label">{Math.round(g.to - g.from)}</span>
+          </div>
+        );
+      })}
 
       {allBounds && idle && <ContextToolbar box={toScreen(allBounds, camera)} ids={selected} />}
     </>

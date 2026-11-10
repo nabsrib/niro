@@ -539,6 +539,63 @@ button {
   pointer-events: none;
 }
 
+/* Equal-spacing marker: a pink line with end ticks, and the gap size in a pill. */
+.gap {
+  position: absolute;
+  pointer-events: none;
+}
+
+.gap--x {
+  height: 0;
+  border-top: 1px solid #f2426d;
+}
+
+.gap--y {
+  width: 0;
+  border-left: 1px solid #f2426d;
+}
+
+.gap::before,
+.gap::after {
+  content: '';
+  position: absolute;
+  background: #f2426d;
+}
+
+.gap--x::before,
+.gap--x::after {
+  top: -5px;
+  width: 1px;
+  height: 9px;
+}
+
+.gap--x::before { left: 0; }
+.gap--x::after { right: 0; }
+
+.gap--y::before,
+.gap--y::after {
+  left: -5px;
+  width: 9px;
+  height: 1px;
+}
+
+.gap--y::before { top: 0; }
+.gap--y::after { bottom: 0; }
+
+.gap__label {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #f2426d;
+  color: #fff;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .frame__title:has(.item__editor) {
   overflow: visible;
   max-width: none;
@@ -791,6 +848,92 @@ button {
   font-size: 11px;
   text-align: center;
   white-space: nowrap;
+}
+
+/* ---------- presenting ---------- */
+
+.present-btn {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px 0 10px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+
+.present-btn:hover {
+  filter: brightness(1.08);
+}
+
+.present-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+/* The current frame stays clear; a huge shadow dims everything around it. */
+.present-mask {
+  position: absolute;
+  box-shadow: 0 0 0 100vmax rgba(14, 14, 24, 0.86);
+  pointer-events: none;
+}
+
+.present-controls {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--panel);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  opacity: 0.35;
+  transition: opacity 0.2s;
+}
+
+.present-controls:hover,
+.present-controls:focus-within {
+  opacity: 1;
+}
+
+.present-count {
+  min-width: 56px;
+  font-size: 13px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.present-exit {
+  height: 36px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.present-exit:hover {
+  background: #f0f0f4;
+}
+
+/* View-only while presenting: no move/text cursors on items. */
+.viewport--presenting,
+.viewport--presenting * {
+  cursor: default !important;
 }
 
 /* ---------- notices ---------- */
