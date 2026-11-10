@@ -20,7 +20,11 @@ export function ContextToolbar({ box, ids }: { box: ScreenBox; ids: string[] }) 
   const selConns = ids.map((id) => connectors[id]).filter(Boolean);
 
   const first = selItems[0];
-  const current = first ? (first.type === 'text' ? first.color : first.fill) : selConns[0]?.stroke;
+  const current = first
+    ? first.type === 'text' || first.type === 'path'
+      ? first.color
+      : first.fill
+    : selConns[0]?.stroke;
   const connIds = selConns.map((c) => c.id);
   const allStyle = (style: ConnectorStyle) => selConns.length > 0 && selConns.every((c) => c.style === style);
   const allStart = selConns.length > 0 && selConns.every((c) => c.startArrow === 'arrow');

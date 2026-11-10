@@ -1,6 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useRef } from 'react';
 import { useBoard } from '../store';
 import { textOn } from '../colors';
+import { pathPoints, smoothPath } from '../pen';
 import { commitActiveEdit, registerActiveEdit, unregisterActiveEdit } from '../editing';
 import type { ItemType } from '../types';
 
@@ -31,6 +32,31 @@ export const ItemView = memo(function ItemView({ id }: { id: string }) {
   }, [id, type]);
 
   if (!item) return null;
+
+  if (item.type === 'path') {
+    // The box itself ignores the pointer; only the stroke (plus a wider
+    // invisible band) can be clicked, so big loops do not block what is inside.
+    const d = smoothPath(pathPoints(item));
+    return (
+      <div
+        className="item item--path"
+        data-item-id={id}
+        style={{ transform: `translate(${item.x}px, ${item.y}px)`, width: item.w, height: item.h }}
+      >
+        <svg width={item.w} height={item.h} className="path__svg">
+          <path
+            d={d}
+            fill="none"
+            stroke={item.color}
+            strokeWidth={item.strokeWidth ?? 3}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path d={d} className="path__hit" />
+        </svg>
+      </div>
+    );
+  }
 
   if (item.type === 'frame') {
     return (

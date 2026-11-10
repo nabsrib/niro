@@ -34,6 +34,9 @@ npm run dev
   double-click it (or use Reset curve) to go back to the automatic curve
 - Snapping: moving or resizing aligns edges and centers with items on screen, with pink
   alignment guides; hold Alt to move freely
+- Pen (P): freehand drawing with 6 colors and 3 widths (widths are in screen pixels at
+  the zoom you draw at). Strokes are smoothed, are selected by clicking the line
+  itself, and can be moved, resized, recolored, copied and exported like other items
 - Frames (F): titled white areas that sit behind everything. Drag a frame by its title to
   move it with everything inside (items whose center is in it); click its body to
   marquee-select inside; double-click the title to rename; duplicating a frame copies its contents
@@ -52,7 +55,7 @@ npm run dev
 
 | Key | Action |
 | --- | --- |
-| V / H / N / T / R / O / L / F | Select / Hand / Sticky / Text / Rectangle / Ellipse / Connector / Frame |
+| V / H / N / T / R / O / L / P / F | Select / Hand / Sticky / Text / Rectangle / Ellipse / Connector / Pen / Frame |
 | Alt (while dragging) | Disable snapping |
 | Ctrl+Z, Ctrl+Shift+Z / Ctrl+Y | Undo, redo |
 | Ctrl+D, Ctrl+C / X / V | Duplicate, copy / cut / paste |
@@ -71,6 +74,7 @@ npm run dev
 - `src/connectors.ts`: connector endpoints, attaching, path geometry (straight/elbow/curved), arrowheads
 - `src/snapping.ts`: edge/center snapping and alignment guides
 - `src/frames.ts`: frame membership and render order
+- `src/pen.ts`: pen stroke smoothing, simplification and normalized storage
 - `src/boardFile.ts`: JSON file format, validation, and remapping for import
 - `src/components/Canvas.tsx`: viewport, pointer gestures (pan, move, resize, marquee, create), wheel
 - `src/components/ItemView.tsx`: item rendering and inline text editor
@@ -78,7 +82,7 @@ npm run dev
 
 ## Roadmap ideas
 
-1. Connector labels, freehand pen
+1. Connector labels, eraser and highlighter for the pen
 2. Equal-spacing guides, nested frames, presenting frames as slides
 3. Viewport culling for very large boards
 4. Multiple boards, export to PNG/SVG

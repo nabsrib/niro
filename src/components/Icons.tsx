@@ -48,6 +48,12 @@ export const Icons = {
       <circle cx="12" cy="12" r="8" />
     </Svg>
   ),
+  pen: () => (
+    <Svg>
+      <path d="M15.5 4.5l4 4L8 20H4v-4z" />
+      <path d="M13 7l4 4" />
+    </Svg>
+  ),
   frame: () => (
     <Svg>
       <path d="M7 3v18M17 3v18M3 7h18M3 17h18" />

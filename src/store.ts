@@ -7,6 +7,7 @@ import { loadBoard, saveBoard } from './persistence';
 import { withFrameChildren } from './frames';
 import type { Guide } from './snapping';
 import { prepareForInsert, type BoardContent } from './boardFile';
+import { PEN_COLORS, PEN_WIDTHS } from './pen';
 
 type Snapshot = {
   items: Record<string, Item>;
@@ -39,6 +40,8 @@ export interface BoardState {
   guides: Guide[];
   /** Short message shown at the bottom of the screen (e.g. after an import). */
   notice: { text: string; kind: 'info' | 'error' } | null;
+  /** Pen tool settings: color and width in screen pixels. */
+  pen: { color: string; width: number };
   past: Snapshot[];
   future: Snapshot[];
   clipboard: Clip;
@@ -55,6 +58,7 @@ export interface BoardState {
   setConnectHint(hint: BoardState['connectHint']): void;
   setGuides(guides: Guide[]): void;
   showNotice(text: string, kind?: 'info' | 'error'): void;
+  setPen(pen: Partial<BoardState['pen']>): void;
 
   /** Record the current board state so the next change can be undone. */
   checkpoint(): void;
@@ -122,6 +126,7 @@ export const useBoard = create<BoardState>()((set, get) => ({
   connectHint: null,
   guides: [],
   notice: null,
+  pen: { color: PEN_COLORS[0], width: PEN_WIDTHS[1] },
   past: [],
   future: [],
   clipboard: { items: [], connectors: [] },
@@ -175,6 +180,7 @@ export const useBoard = create<BoardState>()((set, get) => ({
     if (!guides.length && !get().guides.length) return;
     set({ guides });
   },
+  setPen: (pen) => set((s) => ({ pen: { ...s.pen, ...pen } })),
   showNotice: (text, kind = 'info') => {
     const notice = { text, kind };
     set({ notice });
@@ -332,7 +338,8 @@ export const useBoard = create<BoardState>()((set, get) => ({
   selectAll: () =>
     set((s) => ({ selected: [...s.order, ...Object.keys(s.connectors)], editingId: null })),
   startEditing: (id) => {
-    if (!get().items[id]) return;
+    // Pen strokes have no text to edit.
+    if (!get().items[id] || get().items[id].type === 'path') return;
     set({ editingId: id, selected: [id], tool: 'select' });
   },
   finishEditing: (id, text) => {
@@ -405,7 +412,7 @@ export const useBoard = create<BoardState>()((set, get) => ({
     const patches: Record<string, Partial<Item>> = {};
     for (const id of ids) {
       const it = s.items[id];
-      if (it) patches[id] = it.type === 'text' ? { color } : { fill: color };
+      if (it) patches[id] = it.type === 'text' || it.type === 'path' ? { color } : { fill: color };
       if (s.connectors[id]) s.updateConnector(id, { stroke: color });
     }
     s.updateItems(patches);

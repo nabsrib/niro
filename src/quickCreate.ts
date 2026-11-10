@@ -16,7 +16,7 @@ export const OPPOSITE: Record<Side, Side> = {
  * because an empty text item deletes itself, and frames have no dots.
  */
 export const canQuickCreate = (it: Item | undefined): it is Item =>
-  !!it && it.type !== 'text' && it.type !== 'frame';
+  !!it && it.type !== 'text' && it.type !== 'frame' && it.type !== 'path';
 
 /**
  * Where a same-size copy of `src` goes when created from its `side` dot:

@@ -14,6 +14,8 @@ import { ITEM_DEFAULTS } from './defaults';
 export const FILE_FORMAT = 'niro-board';
 export const FILE_VERSION = 1;
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
+/** Upper bound on numbers in one pen stroke (x/y pairs). */
+const MAX_PATH_VALUES = 200_000;
 
 export interface BoardFile {
   format: typeof FILE_FORMAT;
@@ -79,13 +81,36 @@ function sanitizeItem(raw: unknown): Item | null {
   if (!ITEM_TYPES.includes(type)) return null;
   const d = ITEM_DEFAULTS[type];
   if (!Number.isFinite(raw.x) || !Number.isFinite(raw.y)) return null;
+
+  // Pen strokes need a valid list of normalized points.
+  let pen: Pick<Item, 'points' | 'strokeWidth'> = {};
+  if (type === 'path') {
+    const pts = raw.points;
+    if (
+      !Array.isArray(pts) ||
+      pts.length < 2 ||
+      pts.length % 2 !== 0 ||
+      pts.length > MAX_PATH_VALUES ||
+      !pts.every((n) => typeof n === 'number' && Number.isFinite(n))
+    ) {
+      return null;
+    }
+    pen = {
+      points: pts as number[],
+      strokeWidth: Math.min(Math.max(num(raw.strokeWidth, d.strokeWidth ?? 3), 0.05), 1000),
+    };
+  }
+  // Thin strokes (e.g. a straight line) may legitimately be narrower than shapes.
+  const minSize = type === 'path' ? 0.5 : MIN_ITEM_SIZE;
+
   return {
+    ...pen,
     id: raw.id,
     type,
     x: raw.x as number,
     y: raw.y as number,
-    w: Math.max(num(raw.w, d.w), MIN_ITEM_SIZE),
-    h: Math.max(num(raw.h, d.h), MIN_ITEM_SIZE),
+    w: Math.max(num(raw.w, d.w), minSize),
+    h: Math.max(num(raw.h, d.h), minSize),
     fill: color(raw.fill, d.fill),
     color: color(raw.color, d.color),
     text: str(raw.text, d.text).slice(0, 100_000),

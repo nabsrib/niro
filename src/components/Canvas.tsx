@@ -29,6 +29,7 @@ import type { BoardState } from '../store';
 import { ItemView } from './ItemView';
 import { commitActiveEdit } from '../editing';
 import { importBoardFile } from '../boardActions';
+import { makePathItem, simplify, smoothPath } from '../pen';
 import { ConnectorLayer } from './ConnectorLayer';
 import { SelectionOverlay } from './SelectionOverlay';
 
@@ -77,7 +78,9 @@ type Gesture =
   /** Dragging one end of an existing connector. */
   | { kind: 'reconnect'; id: string; end: 'from' | 'to'; moved: boolean }
   /** Dragging the middle handle of a curved connector to reshape it. */
-  | { kind: 'bend'; id: string; moved: boolean };
+  | { kind: 'bend'; id: string; moved: boolean }
+  /** Freehand pen stroke; points are in world coordinates. */
+  | { kind: 'draw'; points: Vec[]; color: string; width: number };
 
 /** Two presses on the curve handle within this many ms reset the curve. */
 const DOUBLE_PRESS_MS = 350;
@@ -114,6 +117,9 @@ export function Canvas() {
   const [marquee, setMarquee] = useState<Box | null>(null);
   const [panning, setPanning] = useState(false);
   const [dropping, setDropping] = useState(false);
+  // Live pen stroke (world points); a version counter re-renders the preview
+  // without copying the growing point list on every move.
+  const [strokeVersion, setStrokeVersion] = useState(0);
   const tool = useBoard((s) => s.tool);
   const spaceHeld = useBoard((s) => s.spaceHeld);
   const camera = useBoard((s) => s.camera);
@@ -247,6 +253,15 @@ export function Canvas() {
       }
       lastBendPress.current = { id: bendOf, time: now };
       begin(e, { kind: 'bend', id: bendOf, moved: false });
+      return;
+    }
+
+    // Pen: start a freehand stroke. Width is in screen pixels, so strokes look
+    // the same thickness whatever the zoom level was while drawing.
+    if (s.tool === 'pen') {
+      s.setSelected([]);
+      begin(e, { kind: 'draw', points: [world], color: s.pen.color, width: s.pen.width / s.camera.z });
+      setStrokeVersion((v) => v + 1);
       return;
     }
 
@@ -502,6 +517,24 @@ export function Canvas() {
         s.setConnectHint(to.kind === 'item' ? { itemId: to.itemId, side: to.side } : null);
         break;
       }
+      case 'draw': {
+        // Use coalesced events so fast strokes keep their detail.
+        const native = e.nativeEvent;
+        const events = native.getCoalescedEvents?.() ?? [];
+        const r = ref.current!.getBoundingClientRect();
+        const minGap = 1.5 / s.camera.z;
+        let added = false;
+        for (const ev of events.length ? events : [native]) {
+          const p = screenToWorld({ x: ev.clientX - r.left, y: ev.clientY - r.top }, s.camera);
+          const last = g.points[g.points.length - 1];
+          if (Math.hypot(p.x - last.x, p.y - last.y) >= minGap) {
+            g.points.push(p);
+            added = true;
+          }
+        }
+        if (added) setStrokeVersion((v) => v + 1);
+        break;
+      }
       case 'bend': {
         const c = s.connectors[g.id];
         const r = c && resolveConnector(c, s.items);
@@ -576,6 +609,13 @@ export function Canvas() {
       case 'reconnect':
         s.setConnectHint(null);
         break;
+      case 'draw': {
+        // Keep the pen active for the next stroke, like Miro.
+        const points = simplify(g.points, 0.4 / s.camera.z);
+        s.addItem(makePathItem(points, g.color, g.width));
+        setStrokeVersion((v) => v + 1);
+        break;
+      }
     }
   };
 
@@ -603,7 +643,7 @@ export function Canvas() {
     ? 'grabbing'
     : tool === 'hand' || spaceHeld
       ? 'grab'
-      : isCreationTool(tool) || tool === 'connector'
+      : isCreationTool(tool) || tool === 'connector' || tool === 'pen'
         ? 'crosshair'
         : 'default';
 
@@ -645,6 +685,20 @@ export function Canvas() {
       <World />
       <div className="overlay">
         <SelectionOverlay />
+        {gesture.current?.kind === 'draw' && strokeVersion > 0 && (
+          <svg className="pen-preview">
+            <path
+              d={smoothPath(
+                gesture.current.points.map((p) => ({
+                  x: p.x * camera.z + camera.x,
+                  y: p.y * camera.z + camera.y,
+                })),
+              )}
+              stroke={gesture.current.color}
+              strokeWidth={gesture.current.width * camera.z}
+            />
+          </svg>
+        )}
         {marquee && (
           <div
             className="marquee"

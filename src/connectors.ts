@@ -341,8 +341,8 @@ export function itemAt(
 ): Item | null {
   for (let i = order.length - 1; i >= 0; i--) {
     const it = items[order[i]];
-    // Frames are containers, not connection targets.
-    if (!it || it.id === exclude || it.type === 'frame') continue;
+    // Frames (containers) and pen strokes are not connection targets.
+    if (!it || it.id === exclude || it.type === 'frame' || it.type === 'path') continue;
     if (containsPoint({ x: it.x - pad, y: it.y - pad, w: it.w + pad * 2, h: it.h + pad * 2 }, p)) return it;
   }
   return null;

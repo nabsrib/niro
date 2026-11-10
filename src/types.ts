@@ -7,17 +7,24 @@ export type Box = { x: number; y: number; w: number; h: number };
  */
 export type Camera = { x: number; y: number; z: number };
 
-export type ItemType = 'sticky' | 'rect' | 'ellipse' | 'text' | 'frame';
+export type ItemType = 'sticky' | 'rect' | 'ellipse' | 'text' | 'frame' | 'path';
 
 export interface Item extends Box {
   id: string;
   type: ItemType;
   /** Background fill (sticky / shapes). */
   fill: string;
-  /** Text color (used by text items; others derive it from fill). */
+  /** Text color for text items; stroke color for pen paths. */
   color: string;
   text: string;
   fontSize: number;
+  /**
+   * Pen paths only: flat [x0, y0, x1, y1, ...] list of points, each normalized
+   * to 0..1 within the item's box, so resizing the box reshapes the stroke.
+   */
+  points?: number[];
+  /** Pen paths only: stroke width in world units. */
+  strokeWidth?: number;
 }
 
 export type Side = 'top' | 'right' | 'bottom' | 'left';
@@ -56,10 +63,13 @@ export interface Connector {
   bend?: Bend | null;
 }
 
-export type Tool = 'select' | 'hand' | 'connector' | ItemType;
+/** Pen strokes ('path' items) are drawn with the pen tool, not placed directly. */
+export type Tool = 'select' | 'hand' | 'connector' | 'pen' | CreationTool;
 
-export const CREATION_TOOLS: ItemType[] = ['sticky', 'text', 'rect', 'ellipse', 'frame'];
+export type CreationTool = Exclude<ItemType, 'path'>;
 
-export function isCreationTool(tool: Tool): tool is ItemType {
+export const CREATION_TOOLS: CreationTool[] = ['sticky', 'text', 'rect', 'ellipse', 'frame'];
+
+export function isCreationTool(tool: Tool): tool is CreationTool {
   return (CREATION_TOOLS as string[]).includes(tool);
 }

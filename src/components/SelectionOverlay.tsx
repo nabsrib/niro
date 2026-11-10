@@ -44,9 +44,12 @@ export function SelectionOverlay() {
   const allBounds = boundsOf([...selItems, ...geos.map((g) => g.bounds)]);
   const hintItem = hint ? items[hint.itemId] : undefined;
 
-  // Frames are containers, so they get no "drag to connect" dots.
+  // Frames (containers) and pen strokes get no "drag to connect" dots.
   const single =
-    selItems.length === 1 && selConnectors.length === 0 && selItems[0].type !== 'frame'
+    selItems.length === 1 &&
+    selConnectors.length === 0 &&
+    selItems[0].type !== 'frame' &&
+    selItems[0].type !== 'path'
       ? selItems[0]
       : null;
   const singleConn = selConnectors.length === 1 && selItems.length === 0 ? selConnectors[0] : null;
