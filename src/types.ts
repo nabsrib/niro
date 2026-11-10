@@ -27,6 +27,15 @@ export interface Item extends Box {
   strokeWidth?: number;
   /** Pen paths only: drawn with the highlighter (wide, see-through). */
   highlight?: boolean;
+  /**
+   * Frames only: position in the presentation order set in the slides grid
+   * (lower first). Frames without one follow, in reading order.
+   */
+  slide?: number;
+  /** Frames only: left out of the presentation (still shown in the slides grid). */
+  skipSlide?: boolean;
+  /** Frames only: a slide deck, whose child frames are laid out in a row as slides. */
+  deck?: boolean;
 }
 
 export type Side = 'top' | 'right' | 'bottom' | 'left';

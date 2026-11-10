@@ -84,6 +84,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { label: 'Export JSON', combos: [['Mod', 'S']] },
       { label: 'Open JSON (replace board)', combos: [['Mod', 'O']] },
       { label: 'Present frames as slides', combos: [['Alt', 'P']] },
+      { label: 'Leave focus mode (nothing selected)', combos: [['Esc']] },
       { label: 'Show shortcuts', combos: [['?']] },
     ],
   },

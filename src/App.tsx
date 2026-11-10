@@ -2,7 +2,9 @@ import { Canvas } from './components/Canvas';
 import { BoardMenu } from './components/BoardMenu';
 import { Notice } from './components/Notice';
 import { PenOptions } from './components/PenOptions';
+import { FrameOptions } from './components/FrameOptions';
 import { PresentButton, Presenter } from './components/Presenter';
+import { FocusMode } from './components/FocusMode';
 import { useBoard } from './store';
 import { ShortcutsHelp } from './components/ShortcutsHelp';
 import { Toolbar } from './components/Toolbar';
@@ -20,10 +22,14 @@ export default function App() {
         <Presenter />
       ) : (
         <>
+          <FocusMode />
           <BoardMenu />
           <Toolbar />
           <PenOptions />
-          <PresentButton />
+          <FrameOptions />
+          <div className="top-right">
+            <PresentButton />
+          </div>
           <div className="corner-controls">
             <ZoomControls />
             <ShortcutsHelp />

@@ -62,7 +62,7 @@ export const ItemView = memo(function ItemView({ id }: { id: string }) {
     return (
       <div
         ref={ref}
-        className="item item--frame"
+        className={`item item--frame${item.deck ? ' item--deck' : ''}`}
         data-item-id={id}
         style={{
           transform: `translate(${item.x}px, ${item.y}px)`,

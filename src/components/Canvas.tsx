@@ -24,7 +24,7 @@ import {
   resolveConnector,
 } from '../connectors';
 import { ITEM_DEFAULTS, makeItem } from '../defaults';
-import { isFrame, renderOrder, withFrameChildren } from '../frames';
+import { FRAME_PRESETS, deckInsertion, deckSlides, isDeck, isFrame, renderOrder, withFrameChildren } from '../frames';
 import { SNAP_DISTANCE, alignmentGuides, snapMove, snapValue } from '../snapping';
 import type { BoardState } from '../store';
 import { ItemView } from './ItemView';
@@ -33,6 +33,7 @@ import { importBoardFile } from '../boardActions';
 import { eraseStroke, makePathItem, simplify, smoothPath } from '../pen';
 import { ConnectorLayer } from './ConnectorLayer';
 import { SelectionOverlay } from './SelectionOverlay';
+import { DeckControls } from './DeckControls';
 
 /** Screen pixels the pointer must travel before a press becomes a drag. */
 const DRAG_THRESHOLD = 3;
@@ -338,8 +339,15 @@ export function Canvas() {
 
     // Create a new item.
     if (isCreationTool(s.tool)) {
+      // Frame tool, Slides preset: click creates a slide deck.
+      if (s.tool === 'frame' && s.framePreset === 'slides') {
+        s.createDeck(world);
+        return;
+      }
       const item = makeItem(s.tool, world.x, world.y);
       if (item.type === 'frame') {
+        const preset = FRAME_PRESETS.find((p) => p.id === s.framePreset) ?? FRAME_PRESETS[0];
+        Object.assign(item, { x: world.x - preset.w / 2, y: world.y - preset.h / 2, w: preset.w, h: preset.h });
         item.text = `Frame ${s.order.filter((id) => isFrame(s.items[id])).length + 1}`;
       }
       s.addItem(item);
@@ -488,6 +496,24 @@ export function Canvas() {
         const patches: Record<string, Partial<Item>> = {};
         for (const id in g.origin) patches[id] = { x: g.origin[id].x + dx, y: g.origin[id].y + dy };
         s.updateItems(patches);
+
+        // Dragging one frame over a slide deck: show where it would join the row.
+        const dragged = s.selected.length === 1 ? s.items[s.selected[0]] : undefined;
+        if (isFrame(dragged) && !isDeck(dragged)) {
+          const st = useBoard.getState();
+          const moving = new Set(Object.keys(g.origin));
+          const rest = st.order.filter((id) => !moving.has(id));
+          const deck = rest
+            .map((id) => st.items[id])
+            .filter((d) => isDeck(d) && containsPoint(d, world))
+            .sort((a, b) => a.w * a.h - b.w * b.h)[0];
+          if (deck) {
+            const { index, line } = deckInsertion(deck, deckSlides(deck, st.items, rest), world.x);
+            s.setDeckDrop({ deckId: deck.id, index, line });
+          } else {
+            s.setDeckDrop(null);
+          }
+        }
         for (const id in g.freeEnds) {
           const { from, to } = g.freeEnds[id];
           const patch: { from?: Endpoint; to?: Endpoint } = {};
@@ -677,6 +703,13 @@ export function Canvas() {
     const s = useBoard.getState();
     s.setInteracting(false);
     s.setGuides([]);
+    // A frame dropped on a slide deck joins its row where the insertion line was.
+    if (g.kind === 'move' && g.moved && s.deckDrop && s.selected.length === 1) {
+      s.dropIntoDeck(s.selected[0], s.deckDrop.deckId, s.deckDrop.index, Object.keys(g.origin));
+    }
+    s.setDeckDrop(null);
+    // A frame moved, resized or drawn into (or out of) a slide deck: re-lay out the decks.
+    if (g.kind === 'move' || g.kind === 'resize' || g.kind === 'create') s.layoutDecks();
 
     switch (g.kind) {
       case 'pan':
@@ -691,8 +724,10 @@ export function Canvas() {
       case 'create': {
         const item = s.items[g.id];
         if (g.dragged && item && item.w < 20 && item.h < 20) {
-          // Accidental tiny drag: fall back to the default size.
+          // Accidental tiny drag: fall back to the default (or preset) size.
           const d = makeItem(g.type, g.startWorld.x, g.startWorld.y);
+          const preset = g.type === 'frame' ? FRAME_PRESETS.find((p) => p.id === s.framePreset) : undefined;
+          if (preset) Object.assign(d, { x: g.startWorld.x - preset.w / 2, y: g.startWorld.y - preset.h / 2, w: preset.w, h: preset.h });
           s.updateItems({ [g.id]: { x: d.x, y: d.y, w: d.w, h: d.h, fontSize: d.fontSize } });
         }
         s.setTool('select');
@@ -793,6 +828,7 @@ export function Canvas() {
       <World />
       <div className="overlay">
         {!presenting && <SelectionOverlay />}
+        {!presenting && <DeckControls />}
         {gesture.current?.kind === 'draw' && strokeVersion > 0 && (
           <svg className={`pen-preview${gesture.current.highlight ? ' pen-preview--highlight' : ''}`}>
             <path

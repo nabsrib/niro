@@ -852,10 +852,16 @@ button {
 
 /* ---------- presenting ---------- */
 
-.present-btn {
+/* Top-right: Frames panel toggle and Present button. */
+.top-right {
   position: absolute;
   right: 12px;
   top: 12px;
+  display: flex;
+  gap: 8px;
+}
+
+.present-btn {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -930,10 +936,409 @@ button {
   background: #f0f0f4;
 }
 
+/* Bottom-left button that opens the slides grid. */
+.present-grid-btn {
+  position: absolute;
+  left: 20px;
+  bottom: 20px;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  opacity: 0.35;
+  transition: opacity 0.2s;
+  cursor: pointer;
+}
+
+.present-grid-btn:hover,
+.present-grid-btn--active {
+  opacity: 1;
+}
+
+.present-grid-btn--active {
+  color: var(--accent);
+}
+
+.slides-grid {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px 16px 76px;
+}
+
+.slides-grid__panel {
+  display: flex;
+  flex-direction: column;
+  width: min(960px, 100%);
+  max-height: min(70vh, 100%);
+  background: var(--panel);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.slides-grid__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 8px 10px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.slides-grid__hint {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.slides-grid__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
+  padding: 14px 16px 16px;
+  overflow-y: auto;
+}
+
+.slide-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.slide-card:hover {
+  background: #f5f5f8;
+}
+
+.slide-card__thumb {
+  display: grid;
+  place-items: center;
+  height: 90px;
+  border-radius: 6px;
+  background: #ececf2;
+}
+
+.slide-card__thumb span {
+  display: block;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(16, 16, 32, 0.1);
+}
+
+.slide-card--current .slide-card__thumb {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.slide-card--hidden .slide-card__thumb,
+.slide-card--hidden .slide-card__name {
+  opacity: 0.4;
+}
+
+.slide-card--dragging {
+  opacity: 0.4;
+}
+
+/* Insertion line while dragging a card to a new position. */
+.slide-card--drop-before::before,
+.slide-card--drop-after::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.slide-card--drop-before::before { left: -9px; }
+.slide-card--drop-after::after { right: -9px; }
+
+.slide-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.slide-card__num {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.slide-card__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* View-only while presenting: no move/text cursors on items. */
 .viewport--presenting,
 .viewport--presenting * {
   cursor: default !important;
+}
+
+/* ---------- frame tool presets ---------- */
+
+.frame-options {
+  position: absolute;
+  left: 64px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 132px;
+  padding: 6px;
+  background: var(--panel);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.frame-options__title {
+  padding: 4px 8px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.frame-preset {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.frame-preset:hover {
+  background: #f0f0f4;
+}
+
+.frame-preset--active,
+.frame-preset--active:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.frame-preset--slides {
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 6px 6px;
+  padding-top: 2px;
+  height: 36px;
+}
+
+.frame-preset__shape {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 20px;
+  height: 20px;
+}
+
+.frame-preset__shape span {
+  display: block;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+}
+
+/* Small icon button (banners, cards). */
+.icon-btn--sm {
+  width: 28px;
+  height: 28px;
+  font-size: 18px;
+  color: var(--muted);
+}
+
+.icon-btn--sm svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ---------- slide decks ---------- */
+
+/* A deck is a frame that holds a row of slides: softer, no shadow. */
+.item--deck {
+  border-radius: calc(12px / var(--z, 1));
+  box-shadow: none;
+}
+
+.deck-bar {
+  position: absolute;
+  transform: translate(-100%, calc(-100% - 8px));
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--panel);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+.deck-bar__count {
+  padding: 0 8px 0 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.deck-bar__btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.deck-bar__btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.deck-bar__btn:hover:not(:disabled) {
+  background: #f0f0f4;
+}
+
+.deck-bar__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.deck-bar__btn--play {
+  background: var(--accent);
+  color: #fff;
+}
+
+.deck-bar__btn--play:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+
+.deck-bar__btn--play svg {
+  fill: currentColor;
+}
+
+/* Insertion line while dragging a frame into a deck's row. */
+.deck-drop {
+  position: absolute;
+  width: 4px;
+  margin-left: -2px;
+  border-radius: 2px;
+  background: var(--ink);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.8);
+  pointer-events: none;
+}
+
+/* Round + after the last slide. */
+.deck-plus {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--accent);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.deck-plus:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.deck-plus svg {
+  width: 16px;
+  height: 16px;
+}
+
+.focus-banner__deck {
+  color: var(--muted);
+}
+
+.focus-banner__count {
+  margin-left: 6px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- focus mode ---------- */
+
+/* Like the presentation mask, but lighter so you can still see the board. */
+.focus-mask {
+  position: absolute;
+  box-shadow: 0 0 0 100vmax rgba(20, 20, 32, 0.55);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.focus-banner {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 4px 0 12px;
+  background: var(--panel);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.focus-banner svg {
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+}
+
+.focus-banner__exit {
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: #f0f0f4;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.focus-banner__exit:hover {
+  background: #e6e6ec;
 }
 
 /* ---------- notices ---------- */

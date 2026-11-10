@@ -57,10 +57,26 @@ npm run dev
   marquee-select inside; double-click the title to rename; duplicating a frame copies its contents.
   Frames nest: a frame inside a larger frame belongs to it (items belong to the smallest
   frame their center is in), draws in front of it, and moves and copies with it
-- Present (top-right button, niro menu or Alt+P): shows the top-level frames as full-screen
-  slides in reading order (rows top to bottom, left to right), starting at the selected frame.
-  The camera glides between frames and everything outside the frame is dimmed. Arrows,
-  Space, PageUp/PageDown, Home/End navigate; Esc exits and restores the view
+- Frame tool formats (F opens a flyout, like Miro): Custom (click for 640×360 or drag to
+  size), 16:9, 4:3, 1:1, A4, Phone (click to place) and Slides
+- Slide decks (Frame tool → Slides, click the canvas): a deck holds slides in one row and
+  resizes to fit. A bar above it has Play, Focus and + Slide, and a round + sits after the
+  last slide. Drag an existing frame over the deck: a dark line shows where it will join the
+  row, and on release it becomes a slide there (it never merges into the slide under it).
+  Drag a slide along the row the same way to reorder, drag one out to take it out of the
+  deck; deleting a slide closes the gap
+- Selected frame toolbar: present from this frame, focus, hide from / show in the presentation
+  (decks: play the deck, add a slide)
+- Focus mode: dims everything outside one frame while you keep editing; ‹ › step through the
+  slides (only that deck's slides when focusing a deck slide); leave with Exit or Esc (with
+  nothing selected)
+- Present (top-right button, niro menu or Alt+P): every frame on the board becomes a full-screen
+  slide (decks as their slides), starting at the selected frame. The camera glides between
+  slides and everything outside is dimmed. Arrows, Space, PageUp/PageDown, Home/End navigate;
+  Esc exits and restores the view. The bottom-left grid button opens the slides grid: click a
+  card to jump, drag cards to reorder the presentation, use the eye to hide a slide. Order and
+  hidden state are saved with the board and undoable; frames never reordered follow in
+  reading order
 - Select, Shift-click and marquee multi-select, move, 8-handle resize
   (sticky notes keep their aspect ratio; Shift locks it for others)
 - Inline text editing (double-click or Enter), color palette, bring to front / send to back
@@ -92,7 +108,7 @@ npm run dev
 | Ctrl+= / Ctrl+- / Ctrl+0 / Shift+1 | Zoom in / out / 100% / fit |
 | ? | Show keyboard shortcuts |
 | Alt+P | Present frames as slides |
-| → / Space, ←, Home / End, Esc | Presenting: next, previous, first / last, exit |
+| → / Space, ←, Home / End, Esc | Presenting: next, previous, first / last, close slides grid or exit |
 
 ## Code map
 
@@ -100,14 +116,18 @@ npm run dev
 - `src/geometry.ts`: camera math (screen and world coordinates), hit-testing, resize
 - `src/connectors.ts`: connector endpoints, attaching, path geometry (straight/elbow/curved), arrowheads, label positions
 - `src/snapping.ts`: edge/center snapping, equal-spacing snapping, alignment guides and gap markers
-- `src/frames.ts`: frame membership (nested), render order, slide order for presenting
+- `src/frames.ts`: frame membership (nested), render order, slide decks (`deckSlides`, `layoutDeck`), presentation order (`slideList`, `presentationSlides`), frame presets
 - `src/pen.ts`: pen and highlighter colors and widths, stroke smoothing, simplification, normalized storage, partial erasing
 - `src/shortcuts.ts`: shortcut list for the shortcuts panel, toolbar tooltips and tool keys
 - `src/boardFile.ts`: JSON file format, validation, and remapping for import
 - `src/components/Canvas.tsx`: viewport, pointer gestures (pan, move, resize, marquee, create), wheel
 - `src/components/ItemView.tsx`: item rendering and inline text editor
 - `src/components/SelectionOverlay.tsx`, `ContextToolbar.tsx`, `Toolbar.tsx`, `ZoomControls.tsx`, `ShortcutsHelp.tsx`: UI chrome
-- `src/components/Presenter.tsx`: Present button and presentation mode (dim mask, camera glide, slide controls)
+- `src/components/Presenter.tsx`: Present button, presentation mode (dim mask, slide controls, full screen) and slides grid
+- `src/components/FrameOptions.tsx`: Frame tool formats flyout (presets and Slides)
+- `src/components/DeckControls.tsx`: slide deck bar (Play, Focus, + Slide) and the + after the last slide
+- `src/components/FocusMode.tsx`: focus mode (dim mask, banner with previous / next)
+- `src/cameraGlide.ts`: animated camera moves (`glideTo`, `glideToBox`)
 
 ## Roadmap ideas
 

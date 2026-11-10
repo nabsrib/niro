@@ -101,11 +101,21 @@ function sanitizeItem(raw: unknown): Item | null {
       ...(raw.highlight === true ? { highlight: true } : {}),
     };
   }
+  // Frames: slide order and whether the presentation skips them.
+  const slide: Pick<Item, 'slide' | 'skipSlide' | 'deck'> =
+    type === 'frame'
+      ? {
+          ...(Number.isFinite(raw.slide) ? { slide: raw.slide as number } : {}),
+          ...(raw.skipSlide === true ? { skipSlide: true } : {}),
+          ...(raw.deck === true ? { deck: true } : {}),
+        }
+      : {};
   // Thin strokes (e.g. a straight line) may legitimately be narrower than shapes.
   const minSize = type === 'path' ? 0.5 : MIN_ITEM_SIZE;
 
   return {
     ...pen,
+    ...slide,
     id: raw.id,
     type,
     x: raw.x as number,

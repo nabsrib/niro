@@ -34,7 +34,8 @@ export function useKeyboardShortcuts() {
           PageUp: () => s.goToSlide(i - 1),
           Home: () => s.goToSlide(0),
           End: () => s.goToSlide(Infinity),
-          Escape: () => s.stopPresenting(),
+          // Esc closes the slides grid first, then ends the presentation.
+          Escape: () => (s.presenting?.overview ? s.setOverview(false) : s.stopPresenting()),
         };
         if (go[e.key]) {
           e.preventDefault();
@@ -117,6 +118,11 @@ export function useKeyboardShortcuts() {
           s.deleteItems(s.selected);
           return;
         case 'Escape':
+          // With nothing selected, Esc leaves focus mode.
+          if (!s.selected.length && s.focusId) {
+            s.setFocus(null);
+            return;
+          }
           s.setSelected([]);
           s.setTool('select');
           return;

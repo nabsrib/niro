@@ -1,10 +1,21 @@
 import { create } from 'zustand';
 import type { Box, Camera, Connector, Endpoint, Item, PenMode, Side, Tool, Vec } from './types';
 import { boundsOf, fitCamera, uid, zoomCameraAt } from './geometry';
+import { ITEM_DEFAULTS } from './defaults';
 import { connectorGeometry, makeConnector, resolveConnector } from './connectors';
 import { OPPOSITE, canQuickCreate, quickCreateBox } from './quickCreate';
 import { loadBoard, saveBoard } from './persistence';
-import { isFrame, slideFrames, withFrameChildren } from './frames';
+import {
+  DECK,
+  deckSlides,
+  isDeck,
+  isFrame,
+  layoutDeck,
+  presentationSlides,
+  slideFrames,
+  withFrameChildren,
+  type FramePreset,
+} from './frames';
 import type { Gap, Guide } from './snapping';
 import { prepareForInsert, type BoardContent } from './boardFile';
 import { ERASER_DEFAULT, HIGHLIGHTER_COLORS, HIGHLIGHTER_WIDTHS, PEN_COLORS, PEN_WIDTHS } from './pen';
@@ -49,10 +60,19 @@ export interface BoardState {
   /** Whether the pen tool draws with the pen or the highlighter, or erases. */
   penMode: PenMode;
   /**
-   * Presentation mode: index of the current slide in `slideFrames` and the
+   * Presentation mode: index of the current slide in `presentationSlides` and the
    * camera to restore on exit. Not saved and not part of undo history.
    */
-  presenting: { index: number; returnTo: Camera } | null;
+  presenting: { index: number; returnTo: Camera; overview: boolean } | null;
+  /** Focus mode: the frame being worked on; everything outside it is dimmed. */
+  focusId: string | null;
+  /** Frame tool preset: size of a clicked frame, or 'slides' to create a slide deck. */
+  framePreset: FramePreset;
+  /**
+   * While a frame is dragged over a slide deck: where it would be inserted
+   * (slide index) and the insertion line to draw, in world coordinates.
+   */
+  deckDrop: { deckId: string; index: number; line: { x: number; y1: number; y2: number } } | null;
   /** Eraser settings: diameter in screen pixels. */
   eraser: { size: number };
   past: Snapshot[];
@@ -75,8 +95,32 @@ export interface BoardState {
   setHighlighter(highlighter: Partial<BoardState['highlighter']>): void;
   setPenMode(mode: PenMode): void;
   setEraser(eraser: Partial<BoardState['eraser']>): void;
-  /** Present top-level frames as slides, starting at the selected frame if any. */
-  startPresenting(): void;
+  /**
+   * Present every frame (slides grid order, hidden ones skipped, decks as their
+   * slides), starting at `fromId`, else the selected frame, else the first slide.
+   */
+  startPresenting(fromId?: string): void;
+  /** Show or hide the slides grid while presenting. */
+  setOverview(open: boolean): void;
+  setFocus(id: string | null): void;
+  setFramePreset(preset: FramePreset): void;
+  /** Save a new presentation order (every slide, as listed by `slideList`). Undoable. */
+  reorderSlides(ids: string[]): void;
+  /** Hide a frame from (or show it in) the presentation. Undoable. */
+  setSkipSlide(id: string, skip: boolean): void;
+  /** Create a slide deck with one slide centered on `center`; returns the slide's id. */
+  createDeck(center: Vec): string;
+  /** Add a blank slide at the end of a deck (same size as the last); returns its id. */
+  addSlide(deckId: string): string | null;
+  /** Re-lay out every slide deck (no history: part of the change that triggered it). */
+  layoutDecks(): void;
+  setDeckDrop(drop: BoardState['deckDrop']): void;
+  /**
+   * Insert a dragged frame into a deck as the slide at `index` (no history: the
+   * drag already recorded it). `moving` is the frame plus everything that moved
+   * with it, fixed when the drag started.
+   */
+  dropIntoDeck(frameId: string, deckId: string, index: number, moving: string[]): void;
   stopPresenting(): void;
   /** Go to a slide; clamped to the first/last slide. */
   goToSlide(index: number): void;
@@ -183,6 +227,9 @@ export const useBoard = create<BoardState>()((set, get) => ({
   penMode: 'pen',
   eraser: { size: ERASER_DEFAULT },
   presenting: null,
+  focusId: null,
+  framePreset: 'custom',
+  deckDrop: null,
   past: [],
   future: [],
   clipboard: { items: [], connectors: [] },
@@ -231,26 +278,162 @@ export const useBoard = create<BoardState>()((set, get) => ({
   setHighlighter: (highlighter) => set((s) => ({ highlighter: { ...s.highlighter, ...highlighter } })),
   setPenMode: (penMode) => set({ penMode }),
   setEraser: (eraser) => set((s) => ({ eraser: { ...s.eraser, ...eraser } })),
-  startPresenting: () => {
+  startPresenting: (fromId) => {
     const s = get();
     if (s.presenting) return;
-    const slides = slideFrames(s.items, s.order);
+    const slides = presentationSlides(s.items, s.order);
     if (!slides.length) {
-      s.showNotice('Add a frame (F) to present it as a slide.');
+      s.showNotice(
+        slideFrames(s.items, s.order).length
+          ? 'Every slide is hidden. Select a frame and click the eye in its toolbar to show it.'
+          : 'Add a frame (F) to present it as a slide.',
+      );
       return;
     }
-    const picked = s.selected.find((id) => isFrame(s.items[id]));
+    const picked = fromId ?? s.selected.find((id) => isFrame(s.items[id]));
     const index = Math.max(0, slides.findIndex((f) => f.id === picked));
-    set({ presenting: { index, returnTo: s.camera }, selected: [], editingId: null, tool: 'select', connectHint: null });
+    set({ presenting: { index, returnTo: s.camera, overview: false }, selected: [], editingId: null, tool: 'select', connectHint: null });
   },
   stopPresenting: () => {
     const p = get().presenting;
     if (p) set({ presenting: null, camera: p.returnTo });
   },
+  setOverview: (overview) => {
+    const p = get().presenting;
+    if (p) set({ presenting: { ...p, overview } });
+  },
+  setFocus: (focusId) => set({ focusId }),
+  setFramePreset: (framePreset) => set({ framePreset }),
+  reorderSlides: (ids) => {
+    const s = get();
+    const decks = new Map<string, string[]>();
+    const units: string[] = [];
+    for (const id of ids) {
+      const f = s.items[id];
+      if (!isFrame(f)) continue;
+      // A deck's slides move together in the overall order; inside the deck they
+      // take the new order by being laid out again.
+      const deck = s.order.map((d) => s.items[d]).find((d) => isDeck(d) && deckSlides(d, s.items, s.order).some((x) => x.id === id));
+      const unit = deck ? deck.id : id;
+      if (!units.includes(unit)) units.push(unit);
+      if (deck) decks.set(deck.id, [...(decks.get(deck.id) ?? []), id]);
+    }
+    s.checkpoint();
+    const patches: Record<string, Partial<Item>> = {};
+    units.forEach((id, i) => (patches[id] = { slide: i }));
+    s.updateItems(patches);
+    for (const [deckId, slideIds] of decks) {
+      const st = get();
+      const deck = st.items[deckId];
+      const slides = slideIds.map((id) => st.items[id]).filter(Boolean);
+      if (deck) st.updateItems(layoutDeck(deck, slides, st.items, st.order));
+    }
+  },
+  setSkipSlide: (id, skip) => {
+    const s = get();
+    if (!isFrame(s.items[id])) return;
+    s.checkpoint();
+    s.updateItems({ [id]: { skipSlide: skip || undefined } });
+  },
+  createDeck: (center) => {
+    const s = get();
+    const w = DECK.slideW + DECK.pad * 2;
+    const h = DECK.slideH + DECK.pad * 2;
+    const deck: Item = {
+      ...ITEM_DEFAULTS.frame,
+      id: uid(),
+      x: center.x - w / 2,
+      y: center.y - h / 2,
+      w,
+      h,
+      fill: '#ECECF2',
+      text: 'Slides',
+      deck: true,
+    };
+    const slide: Item = {
+      ...ITEM_DEFAULTS.frame,
+      id: uid(),
+      x: deck.x + DECK.pad,
+      y: deck.y + DECK.pad,
+      w: DECK.slideW,
+      h: DECK.slideH,
+      text: 'Slide 1',
+    };
+    s.checkpoint();
+    set((st) => ({
+      items: { ...st.items, [deck.id]: deck, [slide.id]: slide },
+      order: [...st.order, deck.id, slide.id],
+      selected: [slide.id],
+      tool: 'select',
+      editingId: null,
+    }));
+    return slide.id;
+  },
+  addSlide: (deckId) => {
+    const s = get();
+    const deck = s.items[deckId];
+    if (!isDeck(deck)) return null;
+    const slides = deckSlides(deck, s.items, s.order);
+    const last = slides[slides.length - 1];
+    const w = last?.w ?? DECK.slideW;
+    const h = last?.h ?? DECK.slideH;
+    const slide: Item = {
+      ...ITEM_DEFAULTS.frame,
+      id: uid(),
+      // Past the last slide; layout pulls it into place and grows the deck.
+      x: last ? last.x + last.w + DECK.gap : deck.x + DECK.pad,
+      y: last ? last.y : deck.y + DECK.pad,
+      w,
+      h,
+      text: `Slide ${slides.length + 1}`,
+    };
+    s.checkpoint();
+    // Grow the deck first so the new slide's center is inside it (membership is geometric).
+    set((st) => ({
+      items: {
+        ...st.items,
+        [deckId]: { ...deck, w: slide.x + w + DECK.pad - deck.x, h: Math.max(deck.h, h + DECK.pad * 2) },
+        [slide.id]: slide,
+      },
+      order: [...st.order, slide.id],
+      selected: [slide.id],
+      tool: 'select',
+      editingId: null,
+    }));
+    get().layoutDecks();
+    return slide.id;
+  },
+  setDeckDrop: (deckDrop) => {
+    if (deckDrop || get().deckDrop) set({ deckDrop });
+  },
+  dropIntoDeck: (frameId, deckId, index, moving) => {
+    const s = get();
+    const deck = s.items[deckId];
+    const frame = s.items[frameId];
+    if (!isDeck(deck) || !isFrame(frame)) return;
+    // Work out the deck's slides without the dragged group, so a frame that
+    // landed over a slide is not taken for part of that slide.
+    const away = new Set(moving);
+    const rest = s.order.filter((id) => !away.has(id));
+    const slides = deckSlides(deck, s.items, rest);
+    slides.splice(Math.min(index, slides.length), 0, frame);
+    const carry = { [frameId]: moving.filter((id) => id !== frameId) };
+    s.updateItems(layoutDeck(deck, slides, s.items, rest, carry));
+  },
+  layoutDecks: () => {
+    const s = get();
+    const decks = s.order.map((id) => s.items[id]).filter(isDeck);
+    if (!decks.length) return;
+    for (const d of decks) {
+      const st = get();
+      const deck = st.items[d.id];
+      if (deck) st.updateItems(layoutDeck(deck, deckSlides(deck, st.items, st.order), st.items, st.order));
+    }
+  },
   goToSlide: (index) => {
     const s = get();
     if (!s.presenting) return;
-    const last = slideFrames(s.items, s.order).length - 1;
+    const last = presentationSlides(s.items, s.order).length - 1;
     const next = Math.min(Math.max(index, 0), Math.max(last, 0));
     if (next !== s.presenting.index) set({ presenting: { ...s.presenting, index: next } });
   },
@@ -339,6 +522,7 @@ export const useBoard = create<BoardState>()((set, get) => ({
         editingId: null,
       };
     });
+    get().layoutDecks();
   },
   quickCreate: (srcId, side) => {
     const s = get();
@@ -388,6 +572,8 @@ export const useBoard = create<BoardState>()((set, get) => ({
         editingId: s.editingId && gone.has(s.editingId) ? null : s.editingId,
       };
     });
+    // Close the gap a deleted slide leaves in its deck.
+    get().layoutDecks();
   },
   replaceItems: (changes) =>
     set((s) => {
@@ -564,6 +750,8 @@ function insertCopies(clip: Clip): Clip {
       editingId: null,
     };
   });
+  // A copy dropped inside a deck becomes a slide next to the original.
+  useBoard.getState().layoutDecks();
   return { items, connectors };
 }
 

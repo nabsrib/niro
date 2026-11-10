@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useBoard } from '../store';
 import { LABEL_COLORS, LABEL_DEFAULTS, LABEL_SIZES } from '../connectors';
+import { deckSlides, isDeck, isFrame } from '../frames';
 import { PALETTE } from '../colors';
 import type { ConnectorStyle } from '../types';
 import { Icons } from './Icons';
@@ -23,6 +24,7 @@ export function ContextToolbar({ box, ids }: { box: ScreenBox; ids: string[] }) 
   const selConns = ids.map((id) => connectors[id]).filter(Boolean);
 
   const first = selItems[0];
+  const singleFrame = ids.length === 1 && isFrame(first) ? first : undefined;
   const current = first
     ? first.type === 'text' || first.type === 'path'
       ? first.color
@@ -162,6 +164,65 @@ export function ContextToolbar({ box, ids }: { box: ScreenBox; ids: string[] }) 
                   </div>
                 )}
               </div>
+            </>
+          )}
+          <div className="divider" />
+        </>
+      )}
+      {/* Frame actions, like Miro's frame menu: present, focus, hide; decks: play, add slide. */}
+      {singleFrame && (
+        <>
+          {isDeck(singleFrame) ? (
+            <>
+              <button
+                className="icon-btn"
+                title={tooltip('Present this deck', ['Alt', 'P'])}
+                aria-label="Present this deck"
+                onClick={() => {
+                  const st = useBoard.getState();
+                  const start = deckSlides(singleFrame, st.items, st.order).find((f) => !f.skipSlide);
+                  s.startPresenting(start?.id);
+                }}
+              >
+                <Icons.play />
+              </button>
+              <button
+                className="icon-btn"
+                title="Add a blank slide"
+                aria-label="Add a blank slide"
+                onClick={() => s.addSlide(singleFrame.id)}
+              >
+                <Icons.plus />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                className="icon-btn"
+                title={singleFrame.skipSlide ? 'Hidden from the presentation' : tooltip('Present from this frame', ['Alt', 'P'])}
+                aria-label="Present from this frame"
+                disabled={!!singleFrame.skipSlide}
+                onClick={() => s.startPresenting(singleFrame.id)}
+              >
+                <Icons.play />
+              </button>
+              <button
+                className="icon-btn"
+                title="Focus mode: dim everything outside this frame"
+                aria-label="Focus on this frame"
+                onClick={() => s.setFocus(singleFrame.id)}
+              >
+                <Icons.focus />
+              </button>
+              <button
+                className={`icon-btn${singleFrame.skipSlide ? ' icon-btn--active' : ''}`}
+                title={singleFrame.skipSlide ? 'Show in presentation' : 'Hide from presentation'}
+                aria-label={singleFrame.skipSlide ? 'Show in presentation' : 'Hide from presentation'}
+                aria-pressed={!!singleFrame.skipSlide}
+                onClick={() => s.setSkipSlide(singleFrame.id, !singleFrame.skipSlide)}
+              >
+                {singleFrame.skipSlide ? <Icons.eyeOff /> : <Icons.eye />}
+              </button>
             </>
           )}
           <div className="divider" />
