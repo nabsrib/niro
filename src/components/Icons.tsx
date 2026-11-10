@@ -74,6 +74,21 @@ export const Icons = {
       <path d="M4 19C12 19 12 5 20 5" />
     </Svg>
   ),
+  chevronDown: () => (
+    <Svg>
+      <path d="M7 10l5 5 5-5" />
+    </Svg>
+  ),
+  download: () => (
+    <Svg>
+      <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
+    </Svg>
+  ),
+  upload: () => (
+    <Svg>
+      <path d="M12 20V9M7 13l5-5 5 5M5 4h14" />
+    </Svg>
+  ),
   resetCurve: () => (
     <Svg>
       <path d="M4 19C12 19 12 5 20 5" strokeDasharray="2 3" />

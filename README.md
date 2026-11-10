@@ -43,6 +43,10 @@ npm run dev
 - Undo/redo, duplicate, copy/cut/paste, delete, arrow-key nudge
 - Zoom controls and fit-to-content
 - Auto-saves to `localStorage`
+- JSON export/import from the niro menu (top-left): Export (Ctrl+S) downloads the board;
+  Open (Ctrl+O) replaces the board after confirming; Add drops a file in at the screen
+  center, or drop a .json file on the canvas to add it where you drop it. Files are
+  validated, invalid entries are skipped, and every import is one undo step
 
 ## Shortcuts
 
@@ -52,6 +56,7 @@ npm run dev
 | Alt (while dragging) | Disable snapping |
 | Ctrl+Z, Ctrl+Shift+Z / Ctrl+Y | Undo, redo |
 | Ctrl+D, Ctrl+C / X / V | Duplicate, copy / cut / paste |
+| Ctrl+S, Ctrl+O | Export JSON, open JSON (replace board) |
 | Ctrl+A, Esc | Select all, deselect |
 | Del / Backspace | Delete |
 | Enter, Esc | Edit selected item, finish editing |
@@ -66,6 +71,7 @@ npm run dev
 - `src/connectors.ts`: connector endpoints, attaching, path geometry (straight/elbow/curved), arrowheads
 - `src/snapping.ts`: edge/center snapping and alignment guides
 - `src/frames.ts`: frame membership and render order
+- `src/boardFile.ts`: JSON file format, validation, and remapping for import
 - `src/components/Canvas.tsx`: viewport, pointer gestures (pan, move, resize, marquee, create), wheel
 - `src/components/ItemView.tsx`: item rendering and inline text editor
 - `src/components/SelectionOverlay.tsx`, `ContextToolbar.tsx`, `Toolbar.tsx`, `ZoomControls.tsx`: UI chrome
@@ -75,5 +81,5 @@ npm run dev
 1. Connector labels, freehand pen
 2. Equal-spacing guides, nested frames, presenting frames as slides
 3. Viewport culling for very large boards
-4. Multiple boards and a JSON export/import
+4. Multiple boards, export to PNG/SVG
 5. Real-time collaboration (Yjs + a WebSocket server), then accounts

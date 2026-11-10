@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useBoard } from '../store';
 import type { Tool } from '../types';
+import { exportBoard, pickBoardFile } from '../boardActions';
 
 const TOOL_KEYS: Record<string, Tool> = {
   v: 'select',
@@ -56,6 +57,12 @@ export function useKeyboardShortcuts() {
             break;
           case 'v':
             s.paste();
+            break;
+          case 's':
+            exportBoard();
+            break;
+          case 'o':
+            pickBoardFile('replace');
             break;
           case '=':
           case '+':

@@ -6,6 +6,7 @@ import { OPPOSITE, canQuickCreate, quickCreateBox } from './quickCreate';
 import { loadBoard, saveBoard } from './persistence';
 import { withFrameChildren } from './frames';
 import type { Guide } from './snapping';
+import { prepareForInsert, type BoardContent } from './boardFile';
 
 type Snapshot = {
   items: Record<string, Item>;
@@ -36,6 +37,8 @@ export interface BoardState {
   connectHint: { itemId: string; side: Side | null } | null;
   /** Alignment guides shown while moving or resizing. */
   guides: Guide[];
+  /** Short message shown at the bottom of the screen (e.g. after an import). */
+  notice: { text: string; kind: 'info' | 'error' } | null;
   past: Snapshot[];
   future: Snapshot[];
   clipboard: Clip;
@@ -51,6 +54,7 @@ export interface BoardState {
   setSpaceHeld(v: boolean): void;
   setConnectHint(hint: BoardState['connectHint']): void;
   setGuides(guides: Guide[]): void;
+  showNotice(text: string, kind?: 'info' | 'error'): void;
 
   /** Record the current board state so the next change can be undone. */
   checkpoint(): void;
@@ -66,6 +70,10 @@ export interface BoardState {
    * as one undoable step. Returns the new item's id.
    */
   quickCreate(srcId: string, side: Side): string | null;
+  /** Swap the whole board for imported content (one undoable step). */
+  replaceBoard(content: BoardContent): void;
+  /** Add imported content centered on world point `at`, and select it. */
+  insertBoard(content: BoardContent, at: Vec): void;
   /** Patch a connector without recording history (call checkpoint() first). */
   updateConnector(id: string, patch: Partial<Connector>): void;
   /** Change connector styling as one undoable step. */
@@ -113,6 +121,7 @@ export const useBoard = create<BoardState>()((set, get) => ({
   spaceHeld: false,
   connectHint: null,
   guides: [],
+  notice: null,
   past: [],
   future: [],
   clipboard: { items: [], connectors: [] },
@@ -166,6 +175,14 @@ export const useBoard = create<BoardState>()((set, get) => ({
     if (!guides.length && !get().guides.length) return;
     set({ guides });
   },
+  showNotice: (text, kind = 'info') => {
+    const notice = { text, kind };
+    set({ notice });
+    // Clear after a few seconds unless a newer notice replaced it.
+    window.setTimeout(() => {
+      if (get().notice === notice) set({ notice: null });
+    }, kind === 'error' ? 6000 : 4000);
+  },
   setConnectHint: (connectHint) => {
     const cur = get().connectHint;
     if (cur?.itemId === connectHint?.itemId && cur?.side === connectHint?.side) return;
@@ -215,6 +232,34 @@ export const useBoard = create<BoardState>()((set, get) => ({
   addConnector: (c) => {
     get().checkpoint();
     set((s) => ({ connectors: { ...s.connectors, [c.id]: c } }));
+  },
+  replaceBoard: (content) => {
+    get().checkpoint();
+    set({
+      items: Object.fromEntries(content.items.map((it) => [it.id, it])),
+      order: content.items.map((it) => it.id),
+      connectors: Object.fromEntries(content.connectors.map((c) => [c.id, c])),
+      selected: [],
+      editingId: null,
+    });
+    get().zoomToFit();
+  },
+  insertBoard: (content, at) => {
+    const { items, connectors } = prepareForInsert(content, at);
+    get().checkpoint();
+    set((s) => {
+      const nextItems = { ...s.items };
+      for (const it of items) nextItems[it.id] = it;
+      const nextConnectors = { ...s.connectors };
+      for (const c of connectors) nextConnectors[c.id] = c;
+      return {
+        items: nextItems,
+        connectors: nextConnectors,
+        order: [...s.order, ...items.map((it) => it.id)],
+        selected: [...items.map((it) => it.id), ...connectors.map((c) => c.id)],
+        editingId: null,
+      };
+    });
   },
   quickCreate: (srcId, side) => {
     const s = get();

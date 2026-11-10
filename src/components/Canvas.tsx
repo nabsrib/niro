@@ -28,6 +28,7 @@ import { SNAP_DISTANCE, alignmentGuides, snapBox, snapValue } from '../snapping'
 import type { BoardState } from '../store';
 import { ItemView } from './ItemView';
 import { commitActiveEdit } from '../editing';
+import { importBoardFile } from '../boardActions';
 import { ConnectorLayer } from './ConnectorLayer';
 import { SelectionOverlay } from './SelectionOverlay';
 
@@ -112,6 +113,7 @@ export function Canvas() {
   const lastBendPress = useRef<{ id: string; time: number } | null>(null);
   const [marquee, setMarquee] = useState<Box | null>(null);
   const [panning, setPanning] = useState(false);
+  const [dropping, setDropping] = useState(false);
   const tool = useBoard((s) => s.tool);
   const spaceHeld = useBoard((s) => s.spaceHeld);
   const camera = useBoard((s) => s.camera);
@@ -608,7 +610,7 @@ export function Canvas() {
   return (
     <div
       ref={ref}
-      className="viewport"
+      className={`viewport${dropping ? ' viewport--drop' : ''}`}
       style={{
         cursor,
         backgroundSize: `${step}px ${step}px`,
@@ -621,6 +623,24 @@ export function Canvas() {
       onPointerLeave={onPointerLeave}
       onDoubleClick={onDoubleClick}
       onContextMenu={(e) => e.preventDefault()}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes('Files')) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        if (!dropping) setDropping(true);
+      }}
+      onDragLeave={(e) => {
+        // Ignore moves between children; only clear when leaving the canvas.
+        if (!ref.current?.contains(e.relatedTarget as Node | null)) setDropping(false);
+      }}
+      onDrop={(e) => {
+        setDropping(false);
+        const file = e.dataTransfer.files[0];
+        if (!file) return;
+        e.preventDefault();
+        const s = useBoard.getState();
+        void importBoardFile(file, 'add', screenToWorld(local(e), s.camera));
+      }}
     >
       <World />
       <div className="overlay">
