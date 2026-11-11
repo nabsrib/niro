@@ -4,11 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
     <title>Niro</title>
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#f2f2f2" />
   </head>
   <body>
     <div id="root">
-      <div style="display:grid;place-items:center;height:100vh;font:14px system-ui,sans-serif;color:#6b6b76;background:#f2f2f2">
-        Loading board…
+      <!-- Shown while the boards load (replaced by the app). -->
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;height:100vh;font:14px system-ui,sans-serif;color:#6b6b76;background:#f2f2f2">
+        <img src="/logo-full.png" alt="Niro" width="120" style="height:auto" />
+        <span>Loading board…</span>
       </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>

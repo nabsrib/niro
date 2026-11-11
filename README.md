@@ -97,7 +97,10 @@ npm run dev
   edited ones), so very large boards stay smooth; everything is still saved, exported and undoable.
   Dev builds show a "rendering X / Y" counter, and `niroStress(5000)` in the browser console fills
   the board with test items (Ctrl+Z removes them)
-- Multiple boards: the top-left button shows "Niro / board name"; its menu lists every board
+- Branding: the Niro logo as the browser tab icon and on the loading screen; the top-left bar
+  (like Miro's) shows the logo mark, the "Niro" wordmark and the board name, plus a quick
+  export-image button
+- Multiple boards: the top-left bar shows "Niro | board name"; its menu lists every board
   (open board on top) to switch, plus New board, Rename (or double-click), Duplicate and Delete
   (asks first; deleting the last board leaves a new empty one). The URL (`#board=…`) keeps the
   same board open on reload. A board from older versions moves in automatically as "My board"
@@ -152,6 +155,8 @@ npm run dev
 - `src/pen.ts`: pen and highlighter colors and widths, stroke smoothing, simplification, normalized storage, partial erasing
 - `src/shortcuts.ts`: shortcut list for the shortcuts panel, toolbar tooltips and tool keys
 - `src/boardFile.ts`: JSON file format, validation, and remapping for import
+- `public/`: `logo.png` (original), `logo-mark.png` (the mark, square, transparent), `logo-full.png`
+  (mark + wordmark, trimmed), `favicon.png` (64 px), `apple-touch-icon.png` (180 px)
 - `src/boards.ts`: boards list, startup loading and migration, autosave, switch / new / rename / duplicate / delete
 - `src/kv.ts`: key-value storage on IndexedDB with a localStorage fallback
 - `src/persistence.ts`: saved board shape, sanitizing loaded data, reading the pre-boards save

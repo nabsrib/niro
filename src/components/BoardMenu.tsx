@@ -56,21 +56,35 @@ export function BoardMenu() {
 
   return (
     <div className="board-menu" ref={ref} data-ui>
-      <button
-        className="brand"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-      >
-        Niro
-        {current && (
-          <>
-            <span className="brand__sep">/</span>
-            <span className="brand__board">{current.name}</span>
-          </>
-        )}
-        <Icons.chevronDown />
-      </button>
+      {/* Top-left bar, like Miro's: logo + name + board (opens the menu), then quick actions. */}
+      <div className="board-bar">
+        <button
+          className="brand"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          title="Boards and board menu"
+          onClick={() => setOpen((o) => !o)}
+        >
+          <img className="brand__mark" src="/logo-mark.png" alt="" width={30} height={30} draggable={false} />
+          <span className="brand__name">Niro</span>
+          {current && (
+            <>
+              <span className="brand__divider" aria-hidden="true" />
+              <span className="brand__board">{current.name}</span>
+            </>
+          )}
+          <Icons.chevronDown />
+        </button>
+        <span className="board-bar__divider" aria-hidden="true" />
+        <button
+          className="icon-btn"
+          title="Export image (PNG / SVG)"
+          aria-label="Export image"
+          onClick={() => useBoard.getState().openExport()}
+        >
+          <Icons.image />
+        </button>
+      </div>
       {open && (
         <div className="menu" role="menu">
           <div className="menu__section">Boards</div>
