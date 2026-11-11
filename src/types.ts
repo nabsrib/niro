@@ -38,6 +38,14 @@ export interface Item extends Box {
   deck?: boolean;
 }
 
+/** A board in the boards list (its content is stored separately, under its id). */
+export interface BoardMeta {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export type Side = 'top' | 'right' | 'bottom' | 'left';
 
 /**

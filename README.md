@@ -88,11 +88,24 @@ npm run dev
   edited ones), so very large boards stay smooth; everything is still saved, exported and undoable.
   Dev builds show a "rendering X / Y" counter, and `niroStress(5000)` in the browser console fills
   the board with test items (Ctrl+Z removes them)
-- Auto-saves to `localStorage`
+- Multiple boards: the top-left button shows "Niro / board name"; its menu lists every board
+  (open board on top) to switch, plus New board, Rename (or double-click), Duplicate and Delete
+  (asks first; deleting the last board leaves a new empty one). The URL (`#board=…`) keeps the
+  same board open on reload. A board from older versions moves in automatically as "My board"
+- Auto-saves the open board to IndexedDB (the browser's database: lots of space, saves without
+  freezing the page), falling back to localStorage when IndexedDB is blocked. A failed save
+  (storage full) shows a notice instead of failing silently
+- Export image (niro menu, or the image button on a selected frame): PNG (1×, 2×, 3×) or SVG,
+  white, board-grey or transparent background, of the whole board, the selection or one frame (cropped to
+  it). PNG keeps text exactly as on the board; SVG splits text into lines so it opens correctly
+  in Figma, Illustrator and Inkscape. Drawn from board data, so off-screen items are included.
+  Very large areas are shrunk to fit the browser's PNG size limit (the dialog warns); frame
+  outlines, frame titles and thin lines keep a readable pixel size at any scale
 - JSON export/import from the niro menu (top-left): Export (Ctrl+S) downloads the board;
   Open (Ctrl+O) replaces the board after confirming; Add drops a file in at the screen
   center, or drop a .json file on the canvas to add it where you drop it. Files are
-  validated, invalid entries are skipped, and every import is one undo step
+  validated, invalid entries are skipped, and every import is one undo step. "Open JSON as a
+  new board" imports a file into a new board instead
 
 ## Shortcuts
 
@@ -126,6 +139,12 @@ npm run dev
 - `src/pen.ts`: pen and highlighter colors and widths, stroke smoothing, simplification, normalized storage, partial erasing
 - `src/shortcuts.ts`: shortcut list for the shortcuts panel, toolbar tooltips and tool keys
 - `src/boardFile.ts`: JSON file format, validation, and remapping for import
+- `src/boards.ts`: boards list, startup loading and migration, autosave, switch / new / rename / duplicate / delete
+- `src/kv.ts`: key-value storage on IndexedDB with a localStorage fallback
+- `src/persistence.ts`: saved board shape, sanitizing loaded data, reading the pre-boards save
+- `src/exportImage.ts`: board content to SVG (both text modes), what an export area contains
+- `src/exportActions.ts`: text measuring, SVG → PNG, downloads
+- `src/components/ExportDialog.tsx`: export image dialog
 - `src/components/Canvas.tsx`: viewport, pointer gestures (pan, move, resize, marquee, create), wheel
 - `src/components/ItemView.tsx`: item rendering and inline text editor
 - `src/components/SelectionOverlay.tsx`, `ContextToolbar.tsx`, `Toolbar.tsx`, `ZoomControls.tsx`, `ShortcutsHelp.tsx`: UI chrome
@@ -137,6 +156,6 @@ npm run dev
 
 ## Roadmap ideas
 
-1. Multiple boards, export to PNG/SVG
-2. Real-time collaboration (Yjs + a WebSocket server), then accounts
-3. Level of detail when zoomed far out (simplified items), and a spatial index for 50k+ items
+1. Real-time collaboration (Yjs + a WebSocket server), then accounts
+2. Level of detail when zoomed far out (simplified items), and a spatial index for 50k+ items
+3. Boards dashboard with thumbnails, and pasted images (stored in IndexedDB)

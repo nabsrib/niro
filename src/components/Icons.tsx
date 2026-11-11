@@ -104,6 +104,24 @@ export const Icons = {
       <path d="M9 6l6 6-6 6" />
     </Svg>
   ),
+  pencil: () => (
+    <Svg>
+      <path d="M4 20h4L19 9l-4-4L4 16z" />
+      <path d="M13.5 6.5l4 4" />
+    </Svg>
+  ),
+  check: () => (
+    <Svg>
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
+    </Svg>
+  ),
+  image: () => (
+    <Svg>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="9" cy="10" r="1.8" />
+      <path d="M21 16l-5-5-9 9" />
+    </Svg>
+  ),
   grid: () => (
     <Svg>
       <rect x="4" y="4" width="7" height="7" rx="1" />

@@ -1355,6 +1355,271 @@ button {
   pointer-events: none;
 }
 
+/* ---------- export dialog ---------- */
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(14, 14, 24, 0.35);
+  z-index: 20;
+}
+
+.export-dialog {
+  width: min(420px, 100%);
+  padding: 0 0 14px;
+  background: var(--panel);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  font-size: 13px;
+}
+
+.export-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 8px 10px 16px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.export-dialog__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px;
+}
+
+.export-dialog__row--top {
+  align-items: flex-start;
+}
+
+.export-dialog__label {
+  flex: none;
+  width: 84px;
+  color: var(--muted);
+}
+
+.export-dialog__help {
+  margin: 0 16px 4px 112px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.export-dialog__warn {
+  color: #9a5b00;
+}
+
+.export-dialog__options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.export-dialog__dims {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.export-dialog__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 16px 0;
+}
+
+.export-dialog__empty {
+  flex: 1;
+  font-size: 12px;
+  color: #b42318;
+}
+
+.radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.radio span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.radio input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.radio--disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 7px;
+  background: #f0f0f4;
+}
+
+.segmented button {
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.segmented button.is-active {
+  background: var(--panel);
+  box-shadow: 0 1px 2px rgba(16, 16, 32, 0.15);
+  font-weight: 600;
+}
+
+.btn {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.btn:hover:not(:disabled) {
+  background: #f0f0f4;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn--primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+
+/* ---------- boards menu ---------- */
+
+.brand__sep {
+  margin: 0 2px 0 4px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.brand__board {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  letter-spacing: normal;
+}
+
+.menu__section {
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.board-list {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.board-row {
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+
+.board-row:hover {
+  background: #f0f0f4;
+}
+
+.board-row__open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.board-row--current .board-row__open {
+  font-weight: 600;
+}
+
+.board-row__check {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  color: var(--accent);
+}
+
+.board-row__check svg {
+  width: 16px;
+  height: 16px;
+}
+
+.board-row__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-row__rename {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  margin: 2px 4px 2px 34px;
+  padding: 0 8px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+}
+
+.board-row__actions {
+  display: flex;
+  padding-right: 4px;
+  opacity: 0;
+}
+
+.board-row:hover .board-row__actions,
+.board-row:focus-within .board-row__actions {
+  opacity: 1;
+}
+
 /* ---------- notices ---------- */
 
 .notice {

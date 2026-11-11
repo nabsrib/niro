@@ -225,6 +225,14 @@ export function ContextToolbar({ box, ids }: { box: ScreenBox; ids: string[] }) 
               </button>
             </>
           )}
+          <button
+            className="icon-btn"
+            title="Export this frame as an image"
+            aria-label="Export this frame as an image"
+            onClick={() => s.openExport({ kind: 'frame', frameId: singleFrame.id })}
+          >
+            <Icons.image />
+          </button>
           <div className="divider" />
         </>
       )}

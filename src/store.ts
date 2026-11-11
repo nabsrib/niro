@@ -1,10 +1,11 @@
 import { create } from 'zustand';
-import type { Box, Camera, Connector, Endpoint, Item, PenMode, Side, Tool, Vec } from './types';
+import type { BoardMeta, Box, Camera, Connector, Endpoint, Item, PenMode, Side, Tool, Vec } from './types';
 import { boundsOf, fitCamera, uid, zoomCameraAt } from './geometry';
 import { ITEM_DEFAULTS } from './defaults';
 import { connectorGeometry, makeConnector, resolveConnector } from './connectors';
 import { OPPOSITE, canQuickCreate, quickCreateBox } from './quickCreate';
-import { loadBoard, saveBoard } from './persistence';
+import type { SavedBoard } from './persistence';
+import type { ExportArea } from './exportImage';
 import {
   DECK,
   deckSlides,
@@ -73,6 +74,11 @@ export interface BoardState {
    * (slide index) and the insertion line to draw, in world coordinates.
    */
   deckDrop: { deckId: string; index: number; line: { x: number; y1: number; y2: number } } | null;
+  /** Every board, for the boards menu; the open one is `boardId`. Content is saved by boards.ts. */
+  boards: BoardMeta[];
+  boardId: string | null;
+  /** Export image dialog: open with this area preselected, or closed. */
+  exportDialog: ExportArea | null;
   /** Eraser settings: diameter in screen pixels. */
   eraser: { size: number };
   past: Snapshot[];
@@ -115,6 +121,15 @@ export interface BoardState {
   /** Re-lay out every slide deck (no history: part of the change that triggered it). */
   layoutDecks(): void;
   setDeckDrop(drop: BoardState['deckDrop']): void;
+  setBoards(boards: BoardMeta[]): void;
+  /**
+   * Show a board: replaces the content and camera, and resets undo history,
+   * selection, editing, presenting and focus. Used when opening or switching boards.
+   */
+  loadBoardData(data: SavedBoard | null, boardId: string, boards: BoardMeta[]): void;
+  /** Open the export dialog; without an area, picks the selected frame, the selection or the board. */
+  openExport(area?: ExportArea): void;
+  closeExport(): void;
   /**
    * Insert a dragged frame into a deck as the slide at `index` (no history: the
    * drag already recorded it). `moving` is the frame plus everything that moved
@@ -166,10 +181,11 @@ export interface BoardState {
   setColor(ids: string[], color: string): void;
 }
 
-const saved = loadBoard();
-const initialCamera: Camera = saved?.camera ?? { x: 0, y: 0, z: 1 };
-/** Without a saved camera, put the world origin at the center once the viewport has a size. */
-let needsCentering = !saved?.camera;
+/**
+ * Without a saved camera, put the world origin at the center once the viewport
+ * has a size. Boards are loaded by `initBoards` (boards.ts) before the app renders.
+ */
+let needsCentering = true;
 
 const snapshot = (s: BoardState): Snapshot => ({
   items: s.items,
@@ -208,13 +224,13 @@ const movePoint = (e: Endpoint, dx: number, dy: number): Endpoint =>
   e.kind === 'point' ? { kind: 'point', x: e.x + dx, y: e.y + dy } : e;
 
 export const useBoard = create<BoardState>()((set, get) => ({
-  items: saved?.items ?? {},
-  order: saved?.order ?? [],
-  connectors: saved?.connectors ?? {},
+  items: {},
+  order: [],
+  connectors: {},
   selected: [],
   editingId: null,
   tool: 'select',
-  camera: initialCamera,
+  camera: { x: 0, y: 0, z: 1 },
   viewport: { w: 0, h: 0 },
   interacting: false,
   spaceHeld: false,
@@ -230,6 +246,9 @@ export const useBoard = create<BoardState>()((set, get) => ({
   focusId: null,
   framePreset: 'custom',
   deckDrop: null,
+  boards: [],
+  boardId: null,
+  exportDialog: null,
   past: [],
   future: [],
   clipboard: { items: [], connectors: [] },
@@ -403,6 +422,44 @@ export const useBoard = create<BoardState>()((set, get) => ({
     get().layoutDecks();
     return slide.id;
   },
+  setBoards: (boards) => set({ boards }),
+  loadBoardData: (data, boardId, boards) => {
+    const { viewport } = get();
+    const hasViewport = viewport.w > 0 && viewport.h > 0;
+    needsCentering = !data?.camera && !hasViewport;
+    const camera = data?.camera ?? (hasViewport ? { x: viewport.w / 2, y: viewport.h / 2, z: 1 } : { x: 0, y: 0, z: 1 });
+    set({
+      items: data?.items ?? {},
+      order: data?.order ?? [],
+      connectors: data?.connectors ?? {},
+      camera,
+      boardId,
+      boards,
+      past: [],
+      future: [],
+      selected: [],
+      editingId: null,
+      presenting: null,
+      focusId: null,
+      deckDrop: null,
+      guides: [],
+      gaps: [],
+      connectHint: null,
+      exportDialog: null,
+    });
+  },
+  openExport: (area) => {
+    const s = get();
+    if (area) {
+      set({ exportDialog: area });
+      return;
+    }
+    const frame = s.selected.length === 1 && isFrame(s.items[s.selected[0]]) ? s.selected[0] : null;
+    set({
+      exportDialog: frame ? { kind: 'frame', frameId: frame } : s.selected.length ? { kind: 'selection' } : { kind: 'board' },
+    });
+  },
+  closeExport: () => set({ exportDialog: null }),
   setDeckDrop: (deckDrop) => {
     if (deckDrop || get().deckDrop) set({ deckDrop });
   },
@@ -754,24 +811,6 @@ function insertCopies(clip: Clip): Clip {
   useBoard.getState().layoutDecks();
   return { items, connectors };
 }
-
-// Persist board + camera to localStorage (debounced).
-let saveTimer: number | undefined;
-useBoard.subscribe((s, prev) => {
-  if (
-    s.items === prev.items &&
-    s.order === prev.order &&
-    s.connectors === prev.connectors &&
-    s.camera === prev.camera
-  ) {
-    return;
-  }
-  window.clearTimeout(saveTimer);
-  saveTimer = window.setTimeout(() => {
-    const { items, order, connectors, camera } = useBoard.getState();
-    saveBoard({ items, order, connectors, camera });
-  }, 300);
-});
 
 // Handy for debugging in the browser console during development.
 if (import.meta.env.DEV) (window as unknown as { board: typeof useBoard }).board = useBoard;

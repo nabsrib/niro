@@ -6,6 +6,7 @@ import { FrameOptions } from './components/FrameOptions';
 import { PresentButton, Presenter } from './components/Presenter';
 import { FocusMode } from './components/FocusMode';
 import { DevStats } from './components/DevStats';
+import { ExportDialog } from './components/ExportDialog';
 import { useBoard } from './store';
 import { ShortcutsHelp } from './components/ShortcutsHelp';
 import { Toolbar } from './components/Toolbar';
@@ -41,6 +42,7 @@ export default function App() {
           </div>
         </>
       )}
+      <ExportDialog />
       <Notice />
     </div>
   );
