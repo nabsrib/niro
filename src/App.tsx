@@ -5,6 +5,7 @@ import { PenOptions } from './components/PenOptions';
 import { FrameOptions } from './components/FrameOptions';
 import { PresentButton, Presenter } from './components/Presenter';
 import { FocusMode } from './components/FocusMode';
+import { DevStats } from './components/DevStats';
 import { useBoard } from './store';
 import { ShortcutsHelp } from './components/ShortcutsHelp';
 import { Toolbar } from './components/Toolbar';
@@ -34,6 +35,7 @@ export default function App() {
             <ZoomControls />
             <ShortcutsHelp />
           </div>
+          {import.meta.env.DEV && <DevStats />}
           <div className="hint">
             Scroll to pan · Ctrl + scroll to zoom · Space + drag to pan · Double-click to edit · Press ? for all shortcuts
           </div>

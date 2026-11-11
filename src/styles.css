@@ -1341,6 +1341,20 @@ button {
   background: #e6e6ec;
 }
 
+/* Dev only: rendered / total counter for viewport culling. */
+.dev-stats {
+  position: absolute;
+  left: 12px;
+  bottom: 36px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(26, 26, 26, 0.75);
+  color: #fff;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
 /* ---------- notices ---------- */
 
 .notice {

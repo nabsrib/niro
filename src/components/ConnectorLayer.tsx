@@ -1,5 +1,7 @@
 import { memo, useLayoutEffect, useRef, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useBoard } from '../store';
+import { cullRect, keepRendered, visibleConnectors } from '../culling';
 import { LABEL_DEFAULTS, connectorGeometry, pointAlong } from '../connectors';
 import type { Item } from '../types';
 import { TextEditor } from './ItemView';
@@ -9,12 +11,17 @@ const LABEL_BOX = { w: 30, h: 20 };
 /** Gap (world units) cut out of the line around the label text. */
 const LABEL_PAD = 4;
 
-/** SVG layer in world space that draws every connector above the items. */
+/**
+ * SVG layer in world space that draws the connectors above the items. Viewport
+ * culling: only connectors near the screen (or selected / being edited) render.
+ */
 export function ConnectorLayer() {
-  const connectors = useBoard((s) => s.connectors);
+  const ids = useBoard(
+    useShallow((s) => visibleConnectors(s.connectors, s.items, cullRect(s.camera, s.viewport), keepRendered(s.selected, s.editingId))),
+  );
   return (
     <svg className="connectors" width="1" height="1" aria-hidden="true">
-      {Object.keys(connectors).map((id) => (
+      {ids.map((id) => (
         <ConnectorView key={id} id={id} />
       ))}
     </svg>

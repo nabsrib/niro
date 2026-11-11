@@ -32,6 +32,7 @@ import { commitActiveEdit } from '../editing';
 import { importBoardFile } from '../boardActions';
 import { eraseStroke, makePathItem, simplify, smoothPath } from '../pen';
 import { ConnectorLayer } from './ConnectorLayer';
+import { cullRect, keepRendered, visibleItems } from '../culling';
 import { SelectionOverlay } from './SelectionOverlay';
 import { DeckControls } from './DeckControls';
 
@@ -862,9 +863,12 @@ export function Canvas() {
 /** World layer: items and connectors live here; the camera is one CSS transform. */
 function World() {
   const camera = useBoard((s) => s.camera);
-  // Frames first so they sit behind everything; shallow-compared so item
-  // edits that do not change the order do not re-render this list.
-  const order = useBoard(useShallow((s) => renderOrder(s.order, s.items)));
+  // Frames first so they sit behind everything. Viewport culling: only items
+  // near the screen are rendered (plus selected / edited ones anywhere). The
+  // list is shallow-compared, so panning re-renders only when it changes.
+  const order = useBoard(
+    useShallow((s) => visibleItems(renderOrder(s.order, s.items), s.items, cullRect(s.camera, s.viewport), keepRendered(s.selected, s.editingId))),
+  );
   const style = {
     transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.z})`,
     // Lets world-space UI (frame titles) stay a constant size on screen.

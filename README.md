@@ -84,6 +84,10 @@ npm run dev
 - Zoom controls and fit-to-content
 - Keyboard shortcuts panel: the round ? button next to the zoom controls (or press ?)
   lists every shortcut by group; shows Cmd/Option keys on a Mac
+- Viewport culling: only items and connectors near the screen are rendered (plus selected and
+  edited ones), so very large boards stay smooth; everything is still saved, exported and undoable.
+  Dev builds show a "rendering X / Y" counter, and `niroStress(5000)` in the browser console fills
+  the board with test items (Ctrl+Z removes them)
 - Auto-saves to `localStorage`
 - JSON export/import from the niro menu (top-left): Export (Ctrl+S) downloads the board;
   Open (Ctrl+O) replaces the board after confirming; Add drops a file in at the screen
@@ -115,6 +119,8 @@ npm run dev
 - `src/store.ts`: board state, actions, history, persistence subscription
 - `src/geometry.ts`: camera math (screen and world coordinates), hit-testing, resize
 - `src/connectors.ts`: connector endpoints, attaching, path geometry (straight/elbow/curved), arrowheads, label positions
+- `src/culling.ts`: viewport culling (area to render, visible items and connectors)
+- `src/devStress.ts`, `src/components/DevStats.tsx`: dev-only stress test and rendered/total counter
 - `src/snapping.ts`: edge/center snapping, equal-spacing snapping, alignment guides and gap markers
 - `src/frames.ts`: frame membership (nested), render order, slide decks (`deckSlides`, `layoutDeck`), presentation order (`slideList`, `presentationSlides`), frame presets
 - `src/pen.ts`: pen and highlighter colors and widths, stroke smoothing, simplification, normalized storage, partial erasing
@@ -131,6 +137,6 @@ npm run dev
 
 ## Roadmap ideas
 
-1. Viewport culling for very large boards
-2. Multiple boards, export to PNG/SVG
-3. Real-time collaboration (Yjs + a WebSocket server), then accounts
+1. Multiple boards, export to PNG/SVG
+2. Real-time collaboration (Yjs + a WebSocket server), then accounts
+3. Level of detail when zoomed far out (simplified items), and a spatial index for 50k+ items
