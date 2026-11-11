@@ -104,6 +104,39 @@ export const Icons = {
       <path d="M9 6l6 6-6 6" />
     </Svg>
   ),
+  alignLeft: () => (
+    <Svg>
+      <path d="M4 6h16M4 10h10M4 14h16M4 18h10" />
+    </Svg>
+  ),
+  alignCenter: () => (
+    <Svg>
+      <path d="M4 6h16M7 10h10M4 14h16M7 18h10" />
+    </Svg>
+  ),
+  alignRight: () => (
+    <Svg>
+      <path d="M4 6h16M10 10h10M4 14h16M10 18h10" />
+    </Svg>
+  ),
+  alignTop: () => (
+    <Svg>
+      <path d="M4 4h16" />
+      <rect x="8" y="7" width="8" height="8" rx="1" />
+    </Svg>
+  ),
+  alignMiddle: () => (
+    <Svg>
+      <path d="M4 12h3M17 12h3" />
+      <rect x="8" y="8" width="8" height="8" rx="1" />
+    </Svg>
+  ),
+  alignBottom: () => (
+    <Svg>
+      <path d="M4 20h16" />
+      <rect x="8" y="9" width="8" height="8" rx="1" />
+    </Svg>
+  ),
   pencil: () => (
     <Svg>
       <path d="M4 20h4L19 9l-4-4L4 16z" />

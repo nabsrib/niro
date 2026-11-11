@@ -1,9 +1,9 @@
-import type { Box, Connector, Item } from './types';
+import type { Box, Connector, Item, RunStyle, TextRun } from './types';
 import { boundsOf, intersects } from './geometry';
 import { LABEL_DEFAULTS, connectorGeometry, pointAlong } from './connectors';
 import { isDeck, isFrame, renderOrder, withFrameChildren } from './frames';
 import { pathPoints, smoothPath } from './pen';
-import { textOn } from './colors';
+import { FLEX_V, FONT_FAMILY, fontCss, textAlign, textColor, textVAlign, type HAlign, type VAlign } from './textStyle';
 
 /**
  * Image export: draws board content as an SVG string from board data (not the
@@ -35,8 +35,6 @@ export type ExportArea =
   | { kind: 'view' }
   | { kind: 'region'; box: Box };
 
-/** Same font stack as the app (`:root` in styles.css). */
-export const FONT_FAMILY = "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 const LINE_HEIGHT = 1.3;
 const LABEL_LINE_HEIGHT = 1.35;
 const INK = '#1a1a1a';
@@ -173,53 +171,172 @@ export function wrapLines(text: string, maxWidth: number, fontCss: string, measu
   return out;
 }
 
+/** How a piece of text looks: size, color, alignment and style. */
+interface TextLook {
+  size: number;
+  color: string;
+  align: HAlign;
+  valign: VAlign;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+}
+
+const lookOf = (it: Item, valign: VAlign): TextLook => ({
+  size: it.fontSize,
+  color: textColor(it),
+  align: textAlign(it),
+  valign,
+  bold: it.bold,
+  italic: it.italic,
+  underline: it.underline,
+});
+
+/** Inline CSS for a rich text run's overrides. */
+function runStyleCss(r: RunStyle): string {
+  return [
+    r.bold !== undefined ? `font-weight:${r.bold ? 700 : 400}` : '',
+    r.italic !== undefined ? `font-style:${r.italic ? 'italic' : 'normal'}` : '',
+    r.underline !== undefined ? `text-decoration:${r.underline ? 'underline' : 'none'}` : '',
+    r.size !== undefined ? `font-size:${r.size}px` : '',
+    r.color !== undefined ? `color:${r.color}` : '',
+  ]
+    .filter(Boolean)
+    .join(';');
+}
+
 /** HTML text box (for PNG): the browser wraps and aligns it like the board. */
-function htmlText(box: Box, text: string, size: number, color: string, align: 'center' | 'top-left', clip: boolean): string {
-  const centered = align === 'center';
+function htmlText(box: Box, text: string, look: TextLook, clip: boolean, runs?: TextRun[]): string {
   const style = [
     'width:100%',
     'height:100%',
     'box-sizing:border-box',
-    `display:${centered ? 'flex' : 'block'}`,
-    'align-items:center',
-    'justify-content:center',
-    `text-align:${centered ? 'center' : 'left'}`,
-    `font:${size}px/${LINE_HEIGHT} ${FONT_FAMILY}`,
-    `color:${color}`,
+    'display:flex',
+    'flex-direction:column',
+    `justify-content:${FLEX_V[look.valign]}`,
+    `text-align:${look.align}`,
+    `font:${look.italic ? 'italic ' : ''}${look.bold ? 700 : 400} ${look.size}px/${LINE_HEIGHT} ${FONT_FAMILY}`,
+    `color:${look.color}`,
+    look.underline ? 'text-decoration:underline' : '',
     'white-space:pre-wrap',
     'overflow-wrap:anywhere',
     `overflow:${clip ? 'hidden' : 'visible'}`,
     'margin:0',
-  ].join(';');
+  ]
+    .filter(Boolean)
+    .join(';');
+  const content = runs
+    ? runs.map((r) => `<span style="${esc(runStyleCss(r))}">${esc(r.text)}</span>`).join('')
+    : esc(text);
   return (
     `<foreignObject x="${box.x}" y="${box.y}" width="${Math.max(box.w, 1)}" height="${Math.max(box.h, 1)}"${clip ? '' : ' overflow="visible"'}>` +
-    `<div xmlns="http://www.w3.org/1999/xhtml" style="${esc(style)}"><div style="width:100%">${esc(text)}</div></div></foreignObject>`
+    `<div xmlns="http://www.w3.org/1999/xhtml" style="${esc(style)}"><div style="width:100%">${content}</div></div></foreignObject>`
   );
 }
 
+/**
+ * Rich text as SVG (for SVG files): words keep their run's style; lines wrap
+ * by measuring each word in its own font, and each line is as tall as its
+ * biggest text.
+ */
+function richSvgText(box: Box, runs: TextRun[], look: TextLook, measure: Measure, lineHeight: number): string {
+  type Token = { text: string; look: TextLook; width: number; space: boolean };
+  type Line = { tokens: Token[]; size: number };
+  const lines: Line[] = [{ tokens: [], size: look.size }];
+  const width = (t: string, l: TextLook) => measure(t, fontCss(l, l.size));
+  const lineWidth = (line: Line) => {
+    let end = line.tokens.length;
+    while (end > 0 && line.tokens[end - 1].space) end--; // trailing spaces hang
+    return line.tokens.slice(0, end).reduce((w, t) => w + t.width, 0);
+  };
+  const add = (t: Token) => {
+    const line = lines[lines.length - 1];
+    line.tokens.push(t);
+    line.size = Math.max(line.size, t.look.size);
+  };
+  const newLine = (size: number) => lines.push({ tokens: [], size });
+
+  for (const run of runs) {
+    const l: TextLook = {
+      ...look,
+      size: run.size ?? look.size,
+      color: run.color ?? look.color,
+      bold: run.bold ?? look.bold,
+      italic: run.italic ?? look.italic,
+      underline: run.underline ?? look.underline,
+    };
+    run.text.split('\n').forEach((para, pi) => {
+      if (pi > 0) newLine(l.size);
+      for (const piece of para.split(/(\s+)/).filter((p) => p.length)) {
+        const w = width(piece, l);
+        // Spaces never start a wrap: they hang at the end of the line, like CSS.
+        if (!piece.trim()) {
+          add({ text: piece, look: l, width: w, space: true });
+          continue;
+        }
+        const line = lines[lines.length - 1];
+        const used = line.tokens.reduce((sum, t) => sum + t.width, 0);
+        if (line.tokens.some((t) => !t.space) && used + w > box.w) newLine(l.size);
+        if (w <= box.w) {
+          add({ text: piece, look: l, width: w, space: false });
+          continue;
+        }
+        // A word too long for a whole line: split it by characters.
+        let chunk = '';
+        for (const ch of piece) {
+          if (chunk && width(chunk + ch, l) > box.w) {
+            add({ text: chunk, look: l, width: width(chunk, l), space: false });
+            newLine(l.size);
+            chunk = '';
+          }
+          chunk += ch;
+        }
+        if (chunk) add({ text: chunk, look: l, width: width(chunk, l), space: false });
+      }
+    });
+  }
+
+  const heights = lines.map((ln) => ln.size * lineHeight);
+  const total = heights.reduce((a, b) => a + b, 0);
+  let y = look.valign === 'top' ? box.y : look.valign === 'bottom' ? box.y + box.h - total : box.y + (box.h - total) / 2;
+  const out: string[] = [];
+  lines.forEach((ln, i) => {
+    const w = lineWidth(ln);
+    const x = look.align === 'left' ? box.x : look.align === 'right' ? box.x + box.w - w : box.x + (box.w - w) / 2;
+    // Baseline: half the line's extra space plus ~0.8em of its biggest text.
+    const baseline = y + (heights[i] - ln.size) / 2 + ln.size * 0.8;
+    ln.tokens.forEach((t, ti) => {
+      const pos = ti === 0 ? ` x="${x}" y="${baseline}"` : '';
+      out.push(
+        `<tspan${pos} font-size="${t.look.size}" fill="${t.look.color}"` +
+          `${t.look.bold ? ' font-weight="700"' : ''}${t.look.italic ? ' font-style="italic"' : ''}` +
+          `${t.look.underline ? ' text-decoration="underline"' : ''}>${esc(t.text)}</tspan>`,
+      );
+    });
+    y += heights[i];
+  });
+  return `<text font-family="${esc(FONT_FAMILY)}" xml:space="preserve">${out.join('')}</text>`;
+}
+
 /** Plain SVG text (for SVG files): lines measured and placed by niro. */
-function svgText(
-  box: Box,
-  text: string,
-  size: number,
-  color: string,
-  align: 'center' | 'top-left',
-  measure: Measure,
-  lineHeight = LINE_HEIGHT,
-): string {
-  const lines = wrapLines(text, Math.max(box.w, 1), font(size), measure);
+function svgText(box: Box, text: string, look: TextLook, measure: Measure, lineHeight = LINE_HEIGHT, runs?: TextRun[]): string {
+  if (runs) return richSvgText(box, runs, look, measure, lineHeight);
+  const { size } = look;
+  const lines = wrapLines(text, Math.max(box.w, 1), fontCss(look, size), measure);
   const lh = size * lineHeight;
   const total = lines.length * lh;
-  const centered = align === 'center';
-  // First baseline: half the line's extra space plus ~0.8em from the line top.
-  const top = centered ? box.y + (box.h - total) / 2 : box.y;
-  const x = centered ? box.x + box.w / 2 : box.x;
+  const top =
+    look.valign === 'top' ? box.y : look.valign === 'bottom' ? box.y + box.h - total : box.y + (box.h - total) / 2;
+  const x = look.align === 'left' ? box.x : look.align === 'right' ? box.x + box.w : box.x + box.w / 2;
+  const anchor = look.align === 'left' ? '' : ` text-anchor="${look.align === 'right' ? 'end' : 'middle'}"`;
+  // Baseline: half the line's extra space plus ~0.8em from the line top.
   const tspans = lines
     .map((l, i) => `<tspan x="${x}" y="${top + i * lh + (lh - size) / 2 + size * 0.8}">${esc(l) || ' '}</tspan>`)
     .join('');
   return (
-    `<text font-family="${esc(FONT_FAMILY)}" font-size="${size}" fill="${color}"` +
-    `${centered ? ' text-anchor="middle"' : ''} xml:space="preserve">${tspans}</text>`
+    `<text font-family="${esc(FONT_FAMILY)}" font-size="${size}" fill="${look.color}"` +
+    `${look.bold ? ' font-weight="700"' : ''}${look.italic ? ' font-style="italic"' : ''}` +
+    `${look.underline ? ' text-decoration="underline"' : ''}${anchor} xml:space="preserve">${tspans}</text>`
   );
 }
 
@@ -229,12 +346,12 @@ function renderItem(it: Item, opts: SvgOptions, cropped: boolean, idx: number): 
   const { textMode, measure, pxPerUnit } = opts;
   // Lines never get thinner than one image pixel, even when a big board is shrunk.
   const line = (w: number) => Math.max(w, 1 / pxPerUnit);
-  const text = (box: Box, size: number, color: string, align: 'center' | 'top-left', clip: boolean) =>
+  const text = (box: Box, look: TextLook, clip: boolean) =>
     !it.text
       ? ''
       : textMode === 'html'
-        ? htmlText(box, it.text, size, color, align, clip)
-        : svgText(box, it.text, size, color, align, measure);
+        ? htmlText(box, it.text, look, clip, it.rich)
+        : svgText(box, it.text, look, measure, LINE_HEIGHT, it.rich);
 
   switch (it.type) {
     case 'frame': {
@@ -258,14 +375,13 @@ function renderItem(it: Item, opts: SvgOptions, cropped: boolean, idx: number): 
       );
     }
     case 'text':
-      // Text items: no padding, aligned top-left, height fits the text.
-      return text({ x: it.x, y: it.y, w: it.w, h: it.h }, it.fontSize, it.color, 'top-left', false);
+      // Text items: no padding, from the top, height fits the text.
+      return text({ x: it.x, y: it.y, w: it.w, h: it.h }, lookOf(it, 'top'), false);
     default: {
-      // Sticky / rect / ellipse: centered text inside 0.6em padding (+ 2px border on shapes), clipped.
+      // Sticky / rect / ellipse: text inside 0.6em padding (+ 2px border on shapes), clipped.
       const border = it.type === 'sticky' ? 0 : 2;
       const pad = it.fontSize * 0.6 + border;
       const inner = { x: it.x + pad, y: it.y + pad, w: it.w - pad * 2, h: it.h - pad * 2 };
-      const color = textOn(it.fill);
       let shape: string;
       if (it.type === 'ellipse') {
         shape = `<ellipse cx="${it.x + it.w / 2}" cy="${it.y + it.h / 2}" rx="${it.w / 2 - 1}" ry="${it.h / 2 - 1}" fill="${it.fill}" stroke="${INK}" stroke-width="${line(2)}"/>`;
@@ -279,7 +395,7 @@ function renderItem(it: Item, opts: SvgOptions, cropped: boolean, idx: number): 
       const clipId = `niro-clip-${idx}`;
       return (
         `${shape}<clipPath id="${clipId}"><rect x="${it.x}" y="${it.y}" width="${it.w}" height="${it.h}"/></clipPath>` +
-        `<g clip-path="url(#${clipId})">${text(inner, it.fontSize, color, 'center', true)}</g>`
+        `<g clip-path="url(#${clipId})">${text(inner, lookOf(it, textVAlign(it)), true)}</g>`
       );
     }
   }
@@ -294,6 +410,7 @@ function renderConnector(c: Connector, items: ItemMap, opts: SvgOptions, idx: nu
   if (c.label) {
     const size = c.labelSize ?? LABEL_DEFAULTS.size;
     const color = c.labelColor ?? LABEL_DEFAULTS.color;
+    const labelLook: TextLook = { size, color, align: 'center', valign: 'middle' };
     const at = pointAlong(g.samples, c.labelAt ?? 0.5);
     const lines = wrapLines(c.label, size * 14 - size * 0.4, font(size), opts.measure);
     const w = Math.max(...lines.map((l) => opts.measure(l, font(size))), size * 0.5);
@@ -310,8 +427,8 @@ function renderConnector(c: Connector, items: ItemMap, opts: SvgOptions, idx: nu
     mask = ` mask="url(#${maskId})"`;
     const label =
       opts.textMode === 'html'
-        ? htmlText({ x: box.x - size, y: box.y, w: w + size * 2, h }, c.label, size, color, 'center', false)
-        : svgText(box, c.label, size, color, 'center', opts.measure, LABEL_LINE_HEIGHT);
+        ? htmlText({ x: box.x - size, y: box.y, w: w + size * 2, h }, c.label, labelLook, false)
+        : svgText(box, c.label, labelLook, opts.measure, LABEL_LINE_HEIGHT);
     out += `<path d="${g.d}" fill="none" stroke="${c.stroke}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"${mask}/>`;
     if (g.startHead) out += `<path d="${g.startHead}" fill="${c.stroke}" stroke="${c.stroke}" stroke-linejoin="round"/>`;
     if (g.endHead) out += `<path d="${g.endHead}" fill="${c.stroke}" stroke="${c.stroke}" stroke-linejoin="round"/>`;

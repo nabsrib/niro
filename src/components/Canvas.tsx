@@ -33,6 +33,7 @@ import { importBoardFile } from '../boardActions';
 import { eraseStroke, makePathItem, simplify, smoothPath } from '../pen';
 import { ConnectorLayer } from './ConnectorLayer';
 import { cullRect, keepRendered, visibleItems } from '../culling';
+import { scaleRuns } from '../richText';
 import { SelectionOverlay } from './SelectionOverlay';
 import { DeckControls } from './DeckControls';
 import { RegionPicker } from './RegionPicker';
@@ -162,6 +163,8 @@ export function Canvas() {
   // Last press on a connector or its label, to spot a double press (opens the
   // label editor on release; pointer capture retargets the dblclick event).
   const lastConnectorPress = useRef<{ id: string; time: number } | null>(null);
+  // Last press on an item, to spot a double press that opens its text editor.
+  const lastItemPress = useRef<{ id: string; time: number } | null>(null);
   const editOnRelease = useRef<string | null>(null);
   const [marquee, setMarquee] = useState<Box | null>(null);
   const [panning, setPanning] = useState(false);
@@ -247,8 +250,8 @@ export function Canvas() {
     const screen = local(e);
     const world = screenToWorld(screen, s.camera);
 
-    // Pan: middle mouse, hand tool, or space + drag.
-    if (e.button === 1 || (e.button === 0 && (s.tool === 'hand' || s.spaceHeld))) {
+    // Pan: right or middle mouse drag (like Miro), hand tool, or space + drag.
+    if (e.button === 1 || e.button === 2 || (e.button === 0 && (s.tool === 'hand' || s.spaceHeld))) {
       e.preventDefault();
       begin(e, { kind: 'pan', startScreen: screen, startCam: s.camera });
       setPanning(true);
@@ -382,6 +385,27 @@ export function Canvas() {
         begin(e, { kind: 'label', id: labelOf, startScreen: screen, moved: false });
         return;
       }
+    }
+
+    // Double press on a sticky, shape or text (or a frame's title) edits its text. Detected here
+    // because pointer capture can retarget the dblclick event; the editor opens on release.
+    const itemHit = attr(target, 'data-item-id');
+    const itemUnder = itemHit ? s.items[itemHit] : undefined;
+    if (
+      itemHit &&
+      itemUnder &&
+      !e.shiftKey &&
+      itemUnder.type !== 'path' &&
+      (!isFrame(itemUnder) || target.closest('[data-frame-title]'))
+    ) {
+      const last = lastItemPress.current;
+      const now = performance.now();
+      if (last && last.id === itemHit && now - last.time < DOUBLE_PRESS_MS) {
+        lastItemPress.current = null;
+        editOnRelease.current = itemHit;
+        return;
+      }
+      lastItemPress.current = { id: itemHit, time: now };
     }
 
     // Select / move items and connectors.
@@ -565,6 +589,8 @@ export function Canvas() {
             w: o.w * sx,
             h: o.h * sy,
             fontSize: lock ? o.fontSize * sx : o.fontSize,
+            // Sizes set on parts of the text scale with the item too.
+            ...(lock && o.rich ? { rich: scaleRuns(o.rich, sx) } : {}),
           };
         }
         s.updateItems(patches);

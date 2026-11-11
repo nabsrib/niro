@@ -1,4 +1,5 @@
-import type { Bend, Connector, Endpoint, Item, ItemType, Side, Vec } from './types';
+import type { Bend, Connector, Endpoint, Item, ItemType, Side, TextRun, Vec } from './types';
+import { normalizeRuns } from './richText';
 import { MIN_ITEM_SIZE, boundsOf, uid } from './geometry';
 import { CONNECTOR_DEFAULTS, LABEL_DEFAULTS } from './connectors';
 import { ITEM_DEFAULTS } from './defaults';
@@ -75,6 +76,23 @@ const str = (v: unknown, fallback: string) => (typeof v === 'string' ? v : fallb
 const color = (v: unknown, fallback: string) =>
   typeof v === 'string' && /^(#[0-9a-f]{3,8}|transparent)$/i.test(v) ? v : fallback;
 
+/** Valid rich text runs from a file (absent if none have their own style). */
+function sanitizeRuns(raw: unknown[]): TextRun[] | undefined {
+  const runs: TextRun[] = raw
+    .filter(isObj)
+    .filter((r) => typeof r.text === 'string')
+    .slice(0, 10_000)
+    .map((r) => ({
+      text: (r.text as string).slice(0, 100_000),
+      ...(typeof r.bold === 'boolean' ? { bold: r.bold } : {}),
+      ...(typeof r.italic === 'boolean' ? { italic: r.italic } : {}),
+      ...(typeof r.underline === 'boolean' ? { underline: r.underline } : {}),
+      ...(Number.isFinite(r.size) ? { size: Math.min(Math.max(r.size as number, 1), 2000) } : {}),
+      ...(typeof r.color === 'string' ? { color: color(r.color, '#1a1a1a') } : {}),
+    }));
+  return normalizeRuns(runs);
+}
+
 function sanitizeItem(raw: unknown): Item | null {
   if (!isObj(raw) || typeof raw.id !== 'string' || !raw.id) return null;
   const type = raw.type as ItemType;
@@ -110,12 +128,26 @@ function sanitizeItem(raw: unknown): Item | null {
           ...(raw.deck === true ? { deck: true } : {}),
         }
       : {};
+  // Text style on stickies, shapes and text items.
+  const styled = type === 'sticky' || type === 'rect' || type === 'ellipse' || type === 'text';
+  const textLook: Pick<Item, 'bold' | 'italic' | 'underline' | 'align' | 'valign' | 'textColor' | 'rich'> = styled
+    ? {
+        ...(raw.bold === true ? { bold: true } : {}),
+        ...(raw.italic === true ? { italic: true } : {}),
+        ...(raw.underline === true ? { underline: true } : {}),
+        ...(raw.align === 'left' || raw.align === 'center' || raw.align === 'right' ? { align: raw.align } : {}),
+        ...(raw.valign === 'top' || raw.valign === 'middle' || raw.valign === 'bottom' ? { valign: raw.valign } : {}),
+        ...(typeof raw.textColor === 'string' ? { textColor: color(raw.textColor, '#1a1a1a') } : {}),
+        ...(Array.isArray(raw.rich) ? { rich: sanitizeRuns(raw.rich) } : {}),
+      }
+    : {};
   // Thin strokes (e.g. a straight line) may legitimately be narrower than shapes.
   const minSize = type === 'path' ? 0.5 : MIN_ITEM_SIZE;
 
   return {
     ...pen,
     ...slide,
+    ...textLook,
     id: raw.id,
     type,
     x: raw.x as number,

@@ -5,6 +5,7 @@ import { SIDES, connectorGeometry, sidePoint } from '../connectors';
 import { OPPOSITE, canQuickCreate, quickCreateBox } from '../quickCreate';
 import type { Box, Camera, Item, Side, Vec } from '../types';
 import { ContextToolbar } from './ContextToolbar';
+import { hasText } from '../textStyle';
 
 const toScreen = (b: Box, c: Camera) => ({
   left: b.x * c.z + c.x,
@@ -56,6 +57,7 @@ export function SelectionOverlay() {
   const singleConn = selConnectors.length === 1 && selItems.length === 0 ? selConnectors[0] : null;
   const singleGeo = singleConn ? geos[0] : null;
   const idle = !interacting && !editingId;
+  const editingText = !!editingId && selected.length === 1 && selected[0] === editingId && hasText(items[editingId]);
 
   // Which connect dot the pointer is over, for the quick-create preview.
   const [hoverSide, setHoverSide] = useState<Side | null>(null);
@@ -197,6 +199,10 @@ export function SelectionOverlay() {
       })}
 
       {allBounds && idle && <ContextToolbar box={toScreen(allBounds, camera)} ids={selected} />}
+      {/* While typing in a sticky, shape or text: the text options stay available. */}
+      {allBounds && !interacting && editingText && (
+        <ContextToolbar box={toScreen(allBounds, camera)} ids={selected} editing />
+      )}
     </>
   );
 }

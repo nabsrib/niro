@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { BoardMeta, Box, Camera, Connector, Endpoint, Item, PenMode, Side, Tool, Vec } from './types';
+import type { BoardMeta, Box, Camera, Connector, Endpoint, Item, PenMode, Side, TextRun, Tool, Vec } from './types';
 import { boundsOf, fitCamera, uid, zoomCameraAt } from './geometry';
 import { ITEM_DEFAULTS } from './defaults';
 import { connectorGeometry, makeConnector, resolveConnector } from './connectors';
@@ -182,13 +182,19 @@ export interface BoardState {
   setSelected(ids: string[]): void;
   selectAll(): void;
   startEditing(id: string): void;
-  finishEditing(id: string, text: string): void;
+  /**
+   * Save edited text. `rich`: the styled runs (null = plain text); omitted for
+   * plain editors (labels, frame titles), which keep the item's rich text as is.
+   */
+  finishEditing(id: string, text: string, rich?: TextRun[] | null): void;
   duplicate(ids: string[]): void;
   copy(ids: string[]): void;
   paste(): void;
   reorder(ids: string[], where: 'front' | 'back'): void;
   nudge(ids: string[], dx: number, dy: number): void;
   setColor(ids: string[], color: string): void;
+  /** Change items' style (text options etc.); `patch` gives each item's change. One undo step. */
+  restyleItems(ids: string[], patch: (it: Item) => Partial<Item>): void;
 }
 
 /**
@@ -691,7 +697,7 @@ export const useBoard = create<BoardState>()((set, get) => ({
     if (!get().items[id] || get().items[id].type === 'path') return;
     set({ editingId: id, selected: [id], tool: 'select' });
   },
-  finishEditing: (id, text) => {
+  finishEditing: (id, text, rich) => {
     const s = get();
     if (s.editingId === id) set({ editingId: null });
     const conn = s.connectors[id];
@@ -722,9 +728,10 @@ export const useBoard = create<BoardState>()((set, get) => ({
       return;
     }
     if (item.type === 'frame' && !text.trim()) text = 'Frame';
-    if (item.text === text) return;
+    const nextRich = rich === undefined ? item.rich : (rich ?? undefined);
+    if (item.text === text && JSON.stringify(item.rich ?? null) === JSON.stringify(nextRich ?? null)) return;
     s.checkpoint();
-    s.updateItems({ [id]: { text } });
+    s.updateItems({ [id]: { text, rich: nextRich } });
   },
   duplicate: (ids) => {
     const clip = collect(get(), ids);
@@ -762,6 +769,13 @@ export const useBoard = create<BoardState>()((set, get) => ({
       if (c) s.updateConnector(id, { from: movePoint(c.from, dx, dy), to: movePoint(c.to, dx, dy) });
     }
     s.updateItems(patches);
+  },
+  restyleItems: (ids, patch) => {
+    const s = get();
+    const targets = ids.filter((id) => s.items[id]);
+    if (!targets.length) return;
+    s.checkpoint();
+    s.updateItems(Object.fromEntries(targets.map((id) => [id, patch(s.items[id])])));
   },
   setColor: (ids, color) => {
     if (!ids.length) return;

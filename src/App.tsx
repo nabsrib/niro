@@ -38,7 +38,7 @@ export default function App() {
           </div>
           {import.meta.env.DEV && <DevStats />}
           <div className="hint">
-            Scroll to pan · Ctrl + scroll to zoom · Space + drag to pan · Double-click to edit · Press ? for all shortcuts
+            Scroll or right-drag to pan · Ctrl + scroll to zoom · Double-click to edit text · Press ? for all shortcuts
           </div>
         </>
       )}

@@ -9,6 +9,21 @@ export type Camera = { x: number; y: number; z: number };
 
 export type ItemType = 'sticky' | 'rect' | 'ellipse' | 'text' | 'frame' | 'path';
 
+/** Style a part of an item's text can override (absent = the item's own style). */
+export interface RunStyle {
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  /** Font size in world units. */
+  size?: number;
+  color?: string;
+}
+
+/** A piece of rich text: its text plus the style overrides it has. */
+export interface TextRun extends RunStyle {
+  text: string;
+}
+
 export interface Item extends Box {
   id: string;
   type: ItemType;
@@ -23,6 +38,20 @@ export interface Item extends Box {
    * to 0..1 within the item's box, so resizing the box reshapes the stroke.
    */
   points?: number[];
+  /** Text items, stickies and shapes: text style (absent = the defaults in textStyle.ts). */
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  align?: 'left' | 'center' | 'right';
+  /** Stickies and shapes only: vertical position of the text. */
+  valign?: 'top' | 'middle' | 'bottom';
+  /** Stickies and shapes only: text color (absent = black or white, whichever reads on the fill). */
+  textColor?: string;
+  /**
+   * Rich text: the text split into styled pieces, when part of it has its own
+   * style (size, bold, color...). `text` always holds the same text, plain.
+   */
+  rich?: TextRun[];
   /** Pen paths only: stroke width in world units. */
   strokeWidth?: number;
   /** Pen paths only: drawn with the highlighter (wide, see-through). */

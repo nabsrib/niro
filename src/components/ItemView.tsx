@@ -1,9 +1,18 @@
 import { memo, useEffect, useLayoutEffect, useRef } from 'react';
 import { useBoard } from '../store';
-import { textOn } from '../colors';
+import { FLEX_V, textAlign, textColor, textVAlign } from '../textStyle';
 import { pathPoints, smoothPath } from '../pen';
-import { commitActiveEdit, registerActiveEdit, unregisterActiveEdit } from '../editing';
-import type { ItemType } from '../types';
+import {
+  commitActiveEdit,
+  registerActiveEdit,
+  registerRichEdit,
+  unregisterActiveEdit,
+  unregisterRichEdit,
+  type RichEditApi,
+} from '../editing';
+import { clearStyles, domToRuns, runsToDom, styleAt, styleRange } from '../richEditor';
+import { itemRuns, normalizeRuns, runCss } from '../richText';
+import type { ItemType, RunStyle, TextRun } from '../types';
 
 const PLACEHOLDER: Partial<Record<ItemType, string>> = { text: 'Type something' };
 
@@ -93,39 +102,62 @@ export const ItemView = memo(function ItemView({ id }: { id: string }) {
         width: item.w,
         height: isText ? undefined : item.h,
         background: isText ? 'transparent' : item.fill,
-        color: isText ? item.color : textOn(item.fill),
+        color: textColor(item),
         fontSize: item.fontSize,
+        fontWeight: item.bold ? 700 : undefined,
+        fontStyle: item.italic ? 'italic' : undefined,
+        textDecoration: item.underline ? 'underline' : undefined,
+        textAlign: textAlign(item),
+        alignItems: isText ? undefined : FLEX_V[textVAlign(item)],
       }}
     >
       {editing ? (
-        <TextEditor id={id} initial={item.text} placeholder={PLACEHOLDER[item.type]} />
+        <TextEditor id={id} initial={item.text} runs={itemRuns(item)} placeholder={PLACEHOLDER[item.type]} />
       ) : (
-        <div className="item__text">{item.text}</div>
+        <div className="item__text">
+          {item.rich
+            ? item.rich.map((r, i) => (
+                <span key={i} style={runCss(r)}>
+                  {r.text}
+                </span>
+              ))
+            : item.text}
+        </div>
       )}
     </div>
   );
 });
 
-/** Inline plain-text editor; saves through `finishEditing` on blur, Esc or Ctrl+Enter. */
+/**
+ * Inline text editor; saves through `finishEditing` on blur, Esc or Ctrl+Enter.
+ * With `runs` it edits rich text (stickies, shapes, text items): the toolbar
+ * can style the selected part while typing. Without, it is plain text
+ * (connector labels, frame titles).
+ */
 export function TextEditor({
   id,
   initial,
+  runs,
   placeholder,
   singleLine = false,
   className = 'item__text',
 }: {
   id: string;
   initial: string;
+  /** Rich text to edit; omit for a plain-text editor. */
+  runs?: TextRun[];
   placeholder?: string;
   /** Enter commits instead of inserting a newline. */
   singleLine?: boolean;
   className?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const rich = !!runs;
 
   useEffect(() => {
     const el = ref.current!;
-    el.innerText = initial;
+    if (runs) runsToDom(el, runs);
+    else el.innerText = initial;
     el.focus();
     const range = document.createRange();
     range.selectNodeContents(el);
@@ -133,22 +165,68 @@ export function TextEditor({
     sel?.removeAllRanges();
     sel?.addRange(range);
 
+    // Remember the selection inside the editor: the toolbar's size menu takes
+    // focus, and styling must still apply to what was selected.
+    let saved: Range | null = range.cloneRange();
+    const onSelection = () => {
+      const s = window.getSelection();
+      if (s && s.rangeCount && el.contains(s.getRangeAt(0).commonAncestorContainer)) saved = s.getRangeAt(0).cloneRange();
+    };
+    const select = (r: Range) => {
+      el.focus();
+      const s = window.getSelection();
+      s?.removeAllRanges();
+      s?.addRange(r);
+      saved = r.cloneRange();
+    };
+    const api: RichEditApi = {
+      id,
+      apply: (patch) => {
+        const r = saved;
+        const keys = (Object.keys(patch) as (keyof RunStyle)[]).filter((k) => patch[k] !== undefined);
+        if (!r || r.collapsed || !el.contains(r.commonAncestorContainer)) {
+          clearStyles(el, keys);
+          if (r) select(r);
+          return false;
+        }
+        select(styleRange(r, patch));
+        return true;
+      },
+      current: () => styleAt(el, saved?.startContainer ?? null),
+    };
+
     let done = false;
     const commit = () => {
       if (done) return;
       done = true;
       unregisterActiveEdit(commit);
-      useBoard.getState().finishEditing(id, el.innerText.replace(/\n$/, ''));
+      if (runs) {
+        const { text, runs: next } = domToRuns(el);
+        useBoard.getState().finishEditing(id, text, normalizeRuns(next) ?? null);
+      } else {
+        useBoard.getState().finishEditing(id, el.innerText.replace(/\n$/, ''));
+      }
+    };
+    // Focus moving to the text toolbar (e.g. its size menu) keeps the editor open.
+    const onBlur = (e: FocusEvent) => {
+      if ((e.relatedTarget as Element | null)?.closest?.('[data-text-toolbar]')) return;
+      commit();
     };
     registerActiveEdit(commit);
-    el.addEventListener('blur', commit);
+    if (runs) {
+      registerRichEdit(api);
+      document.addEventListener('selectionchange', onSelection);
+    }
+    el.addEventListener('blur', onBlur);
     return () => {
-      el.removeEventListener('blur', commit);
+      el.removeEventListener('blur', onBlur);
+      document.removeEventListener('selectionchange', onSelection);
+      unregisterRichEdit(api);
       unregisterActiveEdit(commit);
       // Real unmount (not a StrictMode re-run): make sure the text is saved.
       if (!el.isConnected) commit();
     };
-    // `initial` is only read on mount; later changes must not reset the caret.
+    // `initial` / `runs` are only read on mount; later changes must not reset the caret.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -158,7 +236,7 @@ export function TextEditor({
       data-editor
       data-placeholder={placeholder}
       className={`${className} item__editor`}
-      contentEditable="plaintext-only"
+      contentEditable={rich ? 'true' : 'plaintext-only'}
       suppressContentEditableWarning
       spellCheck={false}
       onKeyDown={(e) => {
@@ -167,7 +245,19 @@ export function TextEditor({
           e.preventDefault();
           commitActiveEdit();
           ref.current?.blur();
+          return;
         }
+        // Rich editor: Enter adds a line break (not a new <div>).
+        if (rich && e.key === 'Enter') {
+          e.preventDefault();
+          document.execCommand('insertLineBreak');
+        }
+      }}
+      onPaste={(e) => {
+        if (!rich) return;
+        // Paste as plain text, in the style at the caret.
+        e.preventDefault();
+        document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
       }}
     />
   );

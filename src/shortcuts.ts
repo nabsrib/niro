@@ -70,7 +70,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     title: 'View',
     items: [
-      { label: 'Pan', combos: [['Scroll'], ['Space', 'Drag']] },
+      { label: 'Pan', combos: [['Scroll'], ['Right-drag'], ['Space', 'Drag']] },
       { label: 'Zoom', combos: [['Mod', 'Scroll']] },
       { label: 'Zoom in', combos: [['Mod', '=']] },
       { label: 'Zoom out', combos: [['Mod', '-']] },

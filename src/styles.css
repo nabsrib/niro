@@ -94,12 +94,12 @@ body,
   max-height: 100%;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  text-align: center;
+  /* Alignment comes from the item (ItemView sets text-align on it). */
+  text-align: inherit;
   min-height: 1.3em;
 }
 
 .item--text .item__text {
-  text-align: left;
   max-height: none;
 }
 
@@ -365,6 +365,26 @@ button {
   border-radius: 8px;
   box-shadow: var(--shadow);
   z-index: 10;
+}
+
+/* Bold / italic / underline buttons: the letter shows the style. */
+.text-btn {
+  font-size: 15px;
+  font-family: Georgia, 'Times New Roman', serif;
+}
+
+.text-btn--bold {
+  font-weight: 700;
+  font-family: inherit;
+}
+
+.text-btn--italic {
+  font-style: italic;
+}
+
+.text-btn--underline {
+  text-decoration: underline;
+  font-family: inherit;
 }
 
 /* ---------- connectors ---------- */

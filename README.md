@@ -23,7 +23,8 @@ npm run dev
 ## Features
 
 - Infinite canvas: wheel to pan, Ctrl/Cmd + wheel or pinch to zoom (5%–800%),
-  Space + drag, middle mouse or the Hand tool to pan, dotted grid that adapts to zoom
+  right-drag (like Miro), Space + drag, middle mouse or the Hand tool to pan, dotted grid that
+  adapts to zoom
 - Items: sticky notes, text, rectangles, ellipses (click to place, or drag to size)
 - Connectors: drag from the blue dots around a selected item, or use the Connector tool (L).
   Hovering a dot previews a connected copy of the shape; clicking it creates that copy
@@ -79,7 +80,15 @@ npm run dev
   reading order
 - Select, Shift-click and marquee multi-select, move, 8-handle resize
   (sticky notes keep their aspect ratio; Shift locks it for others)
-- Inline text editing (double-click or Enter), color palette, bring to front / send to back
+- Inline text editing: double-click (or Enter) a sticky, rectangle, ellipse or text to type in it;
+  color palette, bring to front / send to back
+- Text options in the toolbar for stickies, shapes and text (like Miro): size, bold, italic,
+  underline, horizontal align (left / center / right), vertical align for stickies and shapes
+  (top / middle / bottom) and text color. Saved, undoable, and kept in image exports
+- Rich text (like Miro): while typing in a sticky, shape or text, the text toolbar stays open.
+  Select some words and change their size, bold, italic, underline or color; with nothing selected
+  the change applies to the whole item. Ctrl+B / Ctrl+I / Ctrl+U work too. Kept in saves, JSON and
+  image exports
 - Undo/redo, duplicate, copy/cut/paste, delete, arrow-key nudge
 - Zoom controls and fit-to-content
 - Keyboard shortcuts panel: the round ? button next to the zoom controls (or press ?)
@@ -115,6 +124,8 @@ npm run dev
 | --- | --- |
 | V / H / N / T / R / O / L / P / F | Select / Hand / Sticky / Text / Rectangle / Ellipse / Connector / Pen / Frame |
 | Shift+P / E | Highlighter / Eraser |
+| Right-drag, middle-drag, Space + drag | Pan |
+| Double-click a sticky, shape or text | Edit its text |
 | Alt (while dragging) | Disable snapping |
 | Ctrl+Z, Ctrl+Shift+Z / Ctrl+Y | Undo, redo |
 | Ctrl+D, Ctrl+C / X / V | Duplicate, copy / cut / paste |
@@ -146,6 +157,9 @@ npm run dev
 - `src/persistence.ts`: saved board shape, sanitizing loaded data, reading the pre-boards save
 - `src/exportImage.ts`: board content to SVG (both text modes), what an export area contains
 - `src/exportActions.ts`: text measuring, SVG → PNG, downloads
+- `src/textStyle.ts`: text options (fields, defaults, sizes, colors) shared by the board and export
+- `src/richText.ts`: rich text runs (pure helpers); `src/richEditor.ts`: rich text editing in the DOM
+- `src/components/TextOptions.tsx`: text options in the context toolbar
 - `src/components/ExportDialog.tsx`: export image dialog
 - `src/components/RegionPicker.tsx`: adjustable custom export area window
 - `src/components/Canvas.tsx`: viewport, pointer gestures (pan, move, resize, marquee, create), wheel

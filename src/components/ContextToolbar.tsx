@@ -5,6 +5,8 @@ import { deckSlides, isDeck, isFrame } from '../frames';
 import { PALETTE } from '../colors';
 import type { ConnectorStyle } from '../types';
 import { Icons } from './Icons';
+import { TextOptions } from './TextOptions';
+import { hasText } from '../textStyle';
 import { tooltip } from '../shortcuts';
 
 type ScreenBox = { left: number; top: number; width: number; height: number };
@@ -16,7 +18,12 @@ const STYLES: { style: ConnectorStyle; label: string; Icon: () => React.JSX.Elem
 ];
 
 /** Floating toolbar above the current selection (items and/or connectors). */
-export function ContextToolbar({ box, ids }: { box: ScreenBox; ids: string[] }) {
+/**
+ * Toolbar above the selection. With `editing` (typing in a sticky, shape or
+ * text) it shows only the text options, which then style the selected part
+ * of the text.
+ */
+export function ContextToolbar({ box, ids, editing = false }: { box: ScreenBox; ids: string[]; editing?: boolean }) {
   const s = useBoard.getState();
   const items = useBoard((st) => st.items);
   const connectors = useBoard((st) => st.connectors);
@@ -57,6 +64,24 @@ export function ContextToolbar({ box, ids }: { box: ScreenBox; ids: string[] }) 
     top: above ? box.top - 14 : box.top + box.height + 14,
     transform: `translate(-50%, ${above ? '-100%' : '0'})`,
   };
+
+  if (editing) {
+    return (
+      <div
+        className="context-toolbar"
+        style={style}
+        data-ui
+        data-text-toolbar
+        onPointerDown={(e) => e.stopPropagation()}
+        // Keep the editor focused and its text selected (the size menu still opens).
+        onMouseDown={(e) => {
+          if (!(e.target as Element).closest('select')) e.preventDefault();
+        }}
+      >
+        <TextOptions items={selItems} editing />
+      </div>
+    );
+  }
 
   return (
     <div className="context-toolbar" style={style} data-ui onPointerDown={(e) => e.stopPropagation()}>
@@ -236,6 +261,8 @@ export function ContextToolbar({ box, ids }: { box: ScreenBox; ids: string[] }) 
           <div className="divider" />
         </>
       )}
+      {/* Text options when only stickies, shapes and text are selected. */}
+      {selConns.length === 0 && selItems.length > 0 && selItems.every(hasText) && <TextOptions items={selItems} />}
       <div className="swatches">
         {PALETTE.map((c) => (
           <button
