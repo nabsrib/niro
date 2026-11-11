@@ -35,6 +35,7 @@ import { ConnectorLayer } from './ConnectorLayer';
 import { cullRect, keepRendered, visibleItems } from '../culling';
 import { SelectionOverlay } from './SelectionOverlay';
 import { DeckControls } from './DeckControls';
+import { RegionPicker } from './RegionPicker';
 
 /** Screen pixels the pointer must travel before a press becomes a drag. */
 const DRAG_THRESHOLD = 3;
@@ -830,6 +831,7 @@ export function Canvas() {
       <div className="overlay">
         {!presenting && <SelectionOverlay />}
         {!presenting && <DeckControls />}
+        {!presenting && <RegionPicker />}
         {gesture.current?.kind === 'draw' && strokeVersion > 0 && (
           <svg className={`pen-preview${gesture.current.highlight ? ' pen-preview--highlight' : ''}`}>
             <path

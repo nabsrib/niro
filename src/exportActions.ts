@@ -1,6 +1,7 @@
 import { useBoard } from './store';
 import { commitActiveEdit } from './editing';
 import { collectExport, contentToSvg, type ExportArea, type Measure } from './exportImage';
+import type { Box } from './types';
 
 /** Browser limits for canvas size; bigger PNG exports are scaled down to fit. */
 const MAX_SIDE = 16384;
@@ -64,6 +65,16 @@ export function downloadBlob(blob: Blob, name: string) {
 const slug = (s: string) => s.trim().replace(/[\/:*?"<>|]+/g, '').replace(/\s+/g, '-').slice(0, 60) || 'niro';
 
 export type ExportBackground = 'white' | 'board' | 'transparent';
+
+/**
+ * The export dialog's last settings, kept while picking a custom area (the
+ * dialog closes meanwhile) and for the next export in this session.
+ */
+export const exportPrefs: { format: 'png' | 'svg'; scale: number; background: ExportBackground } = {
+  format: 'png',
+  scale: 2,
+  background: 'white',
+};
 /** White, the canvas grey (so white frames stand out like on the board), or none. */
 const BACKGROUNDS: Record<ExportBackground, string | null> = { white: '#ffffff', board: '#f2f2f2', transparent: null };
 
@@ -80,12 +91,19 @@ export interface ExportRequest {
  * titles and margins keep their pixel size, so a big board shrunk to fit the
  * browser's limits gets more room for them. `pxPerUnit` is that real scale.
  */
+/** The part of the board on screen right now, in board units. */
+export function viewBox(): Box {
+  const { camera: c, viewport: v } = useBoard.getState();
+  return { x: -c.x / c.z, y: -c.y / c.z, w: v.w / c.z, h: v.h / c.z };
+}
+
 function prepare(area: ExportArea, format: 'png' | 'svg', scale: number) {
   const s = useBoard.getState();
-  const first = collectExport(area, s.items, s.order, s.connectors, s.selected);
+  const resolved = area.kind === 'view' ? ({ kind: 'region', box: viewBox() } as const) : area;
+  const first = collectExport(resolved, s.items, s.order, s.connectors, s.selected);
   if (!first || format === 'svg') return first && { content: first, pxPerUnit: 1 };
   let k = fitScale(first.bounds.w, first.bounds.h, scale);
-  const content = collectExport(area, s.items, s.order, s.connectors, s.selected, k) ?? first;
+  const content = collectExport(resolved, s.items, s.order, s.connectors, s.selected, k) ?? first;
   k = fitScale(content.bounds.w, content.bounds.h, scale);
   return { content, pxPerUnit: k };
 }
@@ -114,8 +132,17 @@ export async function runExport(req: ExportRequest): Promise<void> {
   }
   const { content, pxPerUnit } = prepared;
   const board = s.boards.find((b) => b.id === s.boardId)?.name ?? 'niro';
+  const a = req.area;
   const part =
-    req.area.kind === 'frame' ? s.items[req.area.frameId]?.text || 'frame' : req.area.kind === 'selection' ? 'selection' : '';
+    a.kind === 'frame'
+      ? s.items[a.frameId]?.text || 'frame'
+      : a.kind === 'selection'
+        ? 'selection'
+        : a.kind === 'view'
+          ? 'view'
+          : a.kind === 'region'
+            ? 'area'
+            : '';
   const name = slug(part ? `${board} ${part}` : board);
   const svg = contentToSvg(content, s.items, {
     textMode: req.format === 'png' ? 'html' : 'lines',

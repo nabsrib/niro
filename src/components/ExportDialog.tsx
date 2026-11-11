@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useBoard } from '../store';
 import { isFrame } from '../frames';
-import { exportPixels, runExport, type ExportBackground } from '../exportActions';
+import { exportPixels, exportPrefs, runExport, viewBox, type ExportBackground } from '../exportActions';
 import type { ExportArea } from '../exportImage';
 
 type Format = 'png' | 'svg';
@@ -23,10 +23,22 @@ function Dialog({ initial }: { initial: ExportArea }) {
   const selected = useBoard((s) => s.selected);
   const connectors = useBoard((s) => s.connectors);
   const close = useBoard((s) => s.closeExport);
-  const [format, setFormat] = useState<Format>('png');
+  const [format, setFormat] = useState<Format>(exportPrefs.format);
   const [area, setArea] = useState<ExportArea>(initial);
-  const [scale, setScale] = useState(2);
-  const [background, setBackground] = useState<ExportBackground>('white');
+  const [scale, setScale] = useState(exportPrefs.scale);
+  const [background, setBackground] = useState<ExportBackground>(exportPrefs.background);
+  // Remember the settings (the dialog closes while a custom area is picked).
+  useEffect(() => {
+    Object.assign(exportPrefs, { format, scale, background });
+  }, [format, scale, background]);
+  const region = area.kind === 'region' ? area.box : initial.kind === 'region' ? initial.box : null;
+
+  /** Show the adjustable window: the last custom area, or the current view a little inset. */
+  const pickRegion = () => {
+    const v = viewBox();
+    const box = region ?? { x: v.x + v.w * 0.1, y: v.y + v.h * 0.1, w: v.w * 0.8, h: v.h * 0.8 };
+    useBoard.getState().startRegionPick(box, area);
+  };
   const [busy, setBusy] = useState(false);
 
   const frameId = selected.length === 1 && isFrame(items[selected[0]]) ? selected[0] : initial.kind === 'frame' ? initial.frameId : null;
@@ -53,6 +65,7 @@ function Dialog({ initial }: { initial: ExportArea }) {
 
   const areaOptions: { key: string; label: string; area: ExportArea; disabled?: boolean }[] = [
     { key: 'board', label: 'Whole board', area: { kind: 'board' } },
+    { key: 'view', label: 'Current view (what is on screen)', area: { kind: 'view' } },
     { key: 'selection', label: 'Selection', area: { kind: 'selection' }, disabled: !hasSelection },
     ...(frameId
       ? [{ key: 'frame', label: `Frame: ${items[frameId]?.text || 'Frame'}`, area: { kind: 'frame' as const, frameId } }]
@@ -100,6 +113,20 @@ function Dialog({ initial }: { initial: ExportArea }) {
                 <span>{o.label}</span>
               </label>
             ))}
+            <div className="radio-row">
+              <label className="radio">
+                <input
+                  type="radio"
+                  name="export-area"
+                  checked={area.kind === 'region'}
+                  onChange={() => (region ? setArea({ kind: 'region', box: region }) : pickRegion())}
+                />
+                <span>Custom area</span>
+              </label>
+              <button className="link-btn" onClick={pickRegion}>
+                {region ? 'Change…' : 'Choose on board…'}
+              </button>
+            </div>
           </div>
         </div>
 

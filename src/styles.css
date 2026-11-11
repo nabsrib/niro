@@ -1620,6 +1620,82 @@ button {
   opacity: 1;
 }
 
+/* ---------- custom export area ---------- */
+
+.radio-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.link-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+/* Everything outside the window is dimmed by a huge shadow. */
+.region-mask {
+  position: absolute;
+  box-shadow: 0 0 0 100vmax rgba(14, 14, 24, 0.45);
+  pointer-events: none;
+}
+
+.region-window {
+  position: absolute;
+  outline: 2px dashed var(--accent);
+  outline-offset: -1px;
+  cursor: move;
+  pointer-events: auto;
+}
+
+.region-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border: 2px solid var(--accent);
+  border-radius: 2px;
+  background: #fff;
+}
+
+.region-bar {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 24px);
+  padding: 6px 6px 6px 14px;
+  background: var(--panel);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow-x: auto;
+  pointer-events: auto;
+}
+
+.region-bar__title {
+  font-weight: 600;
+}
+
+.region-bar__size {
+  min-width: 150px;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------- notices ---------- */
 
 .notice {

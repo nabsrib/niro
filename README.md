@@ -96,8 +96,10 @@ npm run dev
   freezing the page), falling back to localStorage when IndexedDB is blocked. A failed save
   (storage full) shows a notice instead of failing silently
 - Export image (niro menu, or the image button on a selected frame): PNG (1×, 2×, 3×) or SVG,
-  white, board-grey or transparent background, of the whole board, the selection or one frame (cropped to
-  it). PNG keeps text exactly as on the board; SVG splits text into lines so it opens correctly
+  white, board-grey or transparent background, of the whole board, the current view (what's on
+  screen), the selection, one frame (cropped to it) or a custom area: an adjustable window on the
+  board (drag to move, edges to resize, ratio chips Free / 16:9 / 4:3 / 1:1 / A4, live pixel size;
+  scrolling and zooming still work; Enter = Done, Esc = Cancel). PNG keeps text exactly as on the board; SVG splits text into lines so it opens correctly
   in Figma, Illustrator and Inkscape. Drawn from board data, so off-screen items are included.
   Very large areas are shrunk to fit the browser's PNG size limit (the dialog warns); frame
   outlines, frame titles and thin lines keep a readable pixel size at any scale
@@ -145,6 +147,7 @@ npm run dev
 - `src/exportImage.ts`: board content to SVG (both text modes), what an export area contains
 - `src/exportActions.ts`: text measuring, SVG → PNG, downloads
 - `src/components/ExportDialog.tsx`: export image dialog
+- `src/components/RegionPicker.tsx`: adjustable custom export area window
 - `src/components/Canvas.tsx`: viewport, pointer gestures (pan, move, resize, marquee, create), wheel
 - `src/components/ItemView.tsx`: item rendering and inline text editor
 - `src/components/SelectionOverlay.tsx`, `ContextToolbar.tsx`, `Toolbar.tsx`, `ZoomControls.tsx`, `ShortcutsHelp.tsx`: UI chrome

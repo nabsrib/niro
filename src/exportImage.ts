@@ -1,5 +1,5 @@
 import type { Box, Connector, Item } from './types';
-import { boundsOf } from './geometry';
+import { boundsOf, intersects } from './geometry';
 import { LABEL_DEFAULTS, connectorGeometry, pointAlong } from './connectors';
 import { isDeck, isFrame, renderOrder, withFrameChildren } from './frames';
 import { pathPoints, smoothPath } from './pen';
@@ -23,8 +23,17 @@ export type TextMode = 'html' | 'lines';
 /** Width of `text` in pixels for a CSS font shorthand like `20px Inter`. */
 export type Measure = (text: string, font: string) => number;
 
-/** What to export: everything, the selection, or one frame (cropped to it). */
-export type ExportArea = { kind: 'board' } | { kind: 'selection' } | { kind: 'frame'; frameId: string };
+/**
+ * What to export: everything, the selection, one frame (cropped to it), what
+ * is on screen now (`view`, turned into a region by the caller), or a custom
+ * region picked on the board (cropped to it).
+ */
+export type ExportArea =
+  | { kind: 'board' }
+  | { kind: 'selection' }
+  | { kind: 'frame'; frameId: string }
+  | { kind: 'view' }
+  | { kind: 'region'; box: Box };
 
 /** Same font stack as the app (`:root` in styles.css). */
 export const FONT_FAMILY = "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
@@ -59,7 +68,7 @@ export interface ExportContent {
  * Returns null when there is nothing to export.
  */
 export function collectExport(
-  area: ExportArea,
+  area: Exclude<ExportArea, { kind: 'view' }>,
   items: ItemMap,
   order: string[],
   connectors: Record<string, Connector>,
@@ -67,6 +76,19 @@ export function collectExport(
   /** Image pixels per board unit; titles and margins keep their pixel size. */
   pxPerUnit = 1,
 ): ExportContent | null {
+  // A region: everything that touches it, cropped to it.
+  if (area.kind === 'region') {
+    const box = area.box;
+    const inside = renderOrder(order, items)
+      .map((id) => items[id])
+      .filter((it): it is Item => !!it && intersects(it, box));
+    const conns = Object.values(connectors).filter((c) => {
+      const g = connectorGeometry(c, items);
+      return !!g && intersects(g.bounds, box);
+    });
+    if (!inside.length && !conns.length) return null;
+    return { items: inside, connectors: conns, bounds: box, cropped: false };
+  }
   let ids: string[];
   let extraConnectors: string[] = [];
   if (area.kind === 'board') ids = order;

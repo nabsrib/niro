@@ -79,6 +79,11 @@ export interface BoardState {
   boardId: string | null;
   /** Export image dialog: open with this area preselected, or closed. */
   exportDialog: ExportArea | null;
+  /**
+   * Picking a custom export area on the board: the window (board units), its
+   * shape ('free' or a ratio preset id), and the area to go back to on Cancel.
+   */
+  regionPick: { box: Box; ratio: string; back: ExportArea } | null;
   /** Eraser settings: diameter in screen pixels. */
   eraser: { size: number };
   past: Snapshot[];
@@ -130,6 +135,11 @@ export interface BoardState {
   /** Open the export dialog; without an area, picks the selected frame, the selection or the board. */
   openExport(area?: ExportArea): void;
   closeExport(): void;
+  /** Close the dialog and show the adjustable export window on the board. */
+  startRegionPick(box: Box, back: ExportArea): void;
+  setRegionPick(patch: Partial<{ box: Box; ratio: string }>): void;
+  /** Done: back to the dialog with this region chosen; cancel: back with the previous area. */
+  finishRegionPick(done: boolean): void;
   /**
    * Insert a dragged frame into a deck as the slide at `index` (no history: the
    * drag already recorded it). `moving` is the frame plus everything that moved
@@ -249,6 +259,7 @@ export const useBoard = create<BoardState>()((set, get) => ({
   boards: [],
   boardId: null,
   exportDialog: null,
+  regionPick: null,
   past: [],
   future: [],
   clipboard: { items: [], connectors: [] },
@@ -446,6 +457,7 @@ export const useBoard = create<BoardState>()((set, get) => ({
       gaps: [],
       connectHint: null,
       exportDialog: null,
+      regionPick: null,
     });
   },
   openExport: (area) => {
@@ -460,6 +472,16 @@ export const useBoard = create<BoardState>()((set, get) => ({
     });
   },
   closeExport: () => set({ exportDialog: null }),
+  startRegionPick: (box, back) => set({ exportDialog: null, regionPick: { box, ratio: 'free', back }, selected: [], editingId: null }),
+  setRegionPick: (patch) => {
+    const p = get().regionPick;
+    if (p) set({ regionPick: { ...p, ...patch } });
+  },
+  finishRegionPick: (done) => {
+    const p = get().regionPick;
+    if (!p) return;
+    set({ regionPick: null, exportDialog: done ? { kind: 'region', box: p.box } : p.back });
+  },
   setDeckDrop: (deckDrop) => {
     if (deckDrop || get().deckDrop) set({ deckDrop });
   },
