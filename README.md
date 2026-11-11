@@ -97,7 +97,9 @@ npm run dev
   edited ones), so very large boards stay smooth; everything is still saved, exported and undoable.
   Dev builds show a "rendering X / Y" counter, and `niroStress(5000)` in the browser console fills
   the board with test items (Ctrl+Z removes them)
-- Branding: the Niro logo as the browser tab icon and on the loading screen; the top-left bar
+- Branding: the Niro logo as the browser tab icon and on an animated loading screen (the mark
+  pops in and breathes, a bar slides; it stays until the boards load, at least 0.8 s, then fades
+  into the board; "reduce motion" turns the movement off); the top-left bar
   (like Miro's) shows the logo mark, the "Niro" wordmark and the board name, plus a quick
   export-image button
 - Multiple boards: the top-left bar shows "Niro | board name"; its menu lists every board
