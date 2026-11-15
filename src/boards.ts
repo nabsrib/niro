@@ -39,7 +39,9 @@ import { ApiError, boardsApi, type ServerBoard } from './api';
  * `role`; offered to move into the account on sign-in, or from the menu). New
  * boards are created on the server. Signing out removes the account's boards
  * from this browser (they stay on the server). A link to a board you don't have
- * asks the server whether you may open it.
+ * asks the server whether you may open it; signed out, it offers to continue as
+ * a guest. Guests list the boards they opened via links, and their own new
+ * boards stay in this browser.
  */
 
 let kv: KV;
@@ -65,6 +67,7 @@ const fromServer = (b: ServerBoard, account: string): BoardMeta => ({
   role: b.role,
   account,
   linkAccess: b.linkAccess,
+  guestAccess: b.guestAccess,
   ownerName: b.ownerName,
 });
 
@@ -298,6 +301,8 @@ function startAutosave() {
 let pendingLink: string | null = null;
 /** The account the list was last set up for (undefined until the session is known). */
 let knownUser: string | null | undefined;
+/** Whether that account was a guest. */
+let knownGuest = false;
 let lastRefresh = 0;
 
 function watchAccount() {
@@ -322,10 +327,13 @@ async function onAccountChanged() {
   const userId = a.user?.id ?? null;
   if (userId === knownUser) return;
   const before = knownUser;
+  const wasGuest = knownGuest;
   knownUser = userId;
+  knownGuest = !!a.user?.guest;
   if (userId) {
-    // Offer to move local boards only right after signing in, not on every page load.
-    await syncAccountBoards(before === null);
+    // Offer to move local boards only right after signing in (or a guest making an
+    // account), not on every page load; guests can't keep boards on the server.
+    await syncAccountBoards(!knownGuest && (before === null || wasGuest));
     if (pendingLink) {
       const id = pendingLink;
       pendingLink = null;
@@ -333,11 +341,14 @@ async function onAccountChanged() {
     }
   } else {
     await dropServerBoards();
-    if (pendingLink) {
-      notice('Sign in to open the board you were sent.');
-      openAccountDialog('sign-in');
-    }
+    if (pendingLink) askToJoin();
   }
+}
+
+/** Someone opened a board link while signed out: continue as a guest, or sign in. */
+function askToJoin() {
+  notice('Continue as a guest or sign in to open the board you were sent.');
+  openAccountDialog('guest');
 }
 
 /** Load your account's boards from the server again (names, new shares, removals). */
@@ -409,8 +420,9 @@ async function dropServerBoards() {
  */
 export async function moveLocalBoards(ids: string[]) {
   const user = signedInUser();
-  if (!user) {
-    openAccountDialog('sign-in');
+  if (!user || user.guest) {
+    if (user?.guest) notice('Guests can’t keep boards on the server. Create an account to move boards into it.');
+    openAccountDialog(user?.guest ? 'sign-up' : 'sign-in');
     return;
   }
   commitActiveEdit();
@@ -454,10 +466,8 @@ async function openLink(id: string) {
   if (a.status === 'loading' || a.status === 'offline' || !a.user) {
     pendingLink = id;
     if (s.boardId) setHash(s.boardId);
-    if (a.status === 'signed-out') {
-      notice('Sign in to open the board you were sent.');
-      openAccountDialog('sign-in');
-    } else if (a.status === 'offline') notice('Can’t reach the niro server to open that board.', 'error');
+    if (a.status === 'signed-out') askToJoin();
+    else if (a.status === 'offline') notice('Can’t reach the niro server to open that board.', 'error');
     return;
   }
   try {
@@ -491,11 +501,14 @@ function nextName(base: string, boards: BoardMeta[]) {
   return `${base} ${n}`;
 }
 
-/** A new board's entry: on the server when signed in (falls back to this browser). */
+/**
+ * A new board's entry: on the server when signed in with an account (falls back
+ * to this browser); guests and signed-out people get a board in this browser.
+ */
 async function newBoardMeta(name: string, boards: BoardMeta[]): Promise<BoardMeta> {
   const meta = newMeta(name.trim() || nextName('Untitled board', boards));
   const user = signedInUser();
-  if (!user) return meta;
+  if (!user || user.guest) return meta;
   try {
     return fromServer(await boardsApi.create(meta.id, meta.name), user.id);
   } catch (err) {

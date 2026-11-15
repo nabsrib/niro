@@ -28,6 +28,7 @@ export function BoardMenu() {
   const boardId = useBoard((s) => s.boardId);
   const current = boards.find((b) => b.id === boardId);
   const signedIn = useAccount((s) => s.user !== null);
+  const guest = useAccount((s) => !!s.user?.guest);
 
   // Opening the menu picks up boards shared with you and renames made elsewhere.
   useEffect(() => {
@@ -161,7 +162,7 @@ export function BoardMenu() {
             <Icons.plus />
             <span>New board</span>
           </button>
-          {signedIn && local.length > 0 && (
+          {signedIn && !guest && local.length > 0 && (
             <button
               role="menuitem"
               className="menu__item"

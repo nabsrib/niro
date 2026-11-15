@@ -1,13 +1,14 @@
 // Accounts: sign-up, sign-in and sessions, done by Better Auth (https://better-auth.com).
 // Passwords are hashed by the library (never stored as typed), sessions live in an
 // httpOnly cookie, and repeated attempts are rate limited. Its tables (user, session,
-// account, verification) are created in the SQLite database on start.
+// account, verification; plus user.isAnonymous for guests) are created in the SQLite database on start.
 
 import { randomBytes } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { betterAuth } from 'better-auth';
 import { getMigrations } from 'better-auth/db/migration';
+import { anonymous } from 'better-auth/plugins';
 
 /**
  * Hosts the app may be opened on: this computer, and private network addresses
@@ -37,9 +38,21 @@ async function loadSecret(dataDir) {
   }
 }
 
-/** Set up Better Auth on the database and create its tables if needed. */
-export async function createAuth(db, dataDir) {
+/**
+ * Set up Better Auth on the database and create its tables if needed.
+ * Guests: the anonymous plugin signs someone in without email or password (a
+ * user marked `isAnonymous`). If a guest later creates an account or signs in,
+ * `onGuestLinked(guestId, userId)` moves what the guest had (boards opened via
+ * links), and the guest user is deleted.
+ */
+export async function createAuth(db, dataDir, { onGuestLinked }) {
   const auth = betterAuth({
+    plugins: [
+      anonymous({
+        generateName: () => 'Guest',
+        onLinkAccount: ({ anonymousUser, newUser }) => onGuestLinked(anonymousUser.user.id, newUser.user.id),
+      }),
+    ],
     appName: 'niro',
     database: db,
     secret: await loadSecret(dataDir),

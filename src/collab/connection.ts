@@ -30,6 +30,7 @@ export const DENIED_MESSAGE: Record<string, string> = {
   'signed-out': 'Sign in to keep this board in sync.',
   'no-access': 'You don’t have access to this board any more. Your copy here is kept, but it no longer syncs.',
   'not-found': 'This board is no longer on the server (it may have been deleted).',
+  'guest-no-access': 'This board doesn’t let guests in. Create an account or sign in to open it.',
 };
 
 /** A person's view: the world point at the center of their screen, and their zoom. */
@@ -366,6 +367,13 @@ function flush() {
 /** Share this person's cursor (world coordinates), or null when it leaves the board. */
 export function publishCursor(p: Vec | null) {
   publish('cursor', p && { x: Math.round(p.x), y: Math.round(p.y) });
+}
+
+/** Change this person's color (remembered in this browser, shown to others right away). */
+export function recolorMe(color: string) {
+  const me = setUser({ color });
+  usePresence.setState({ me });
+  publish('user', me);
 }
 
 /** Change this person's name (remembered in this browser, shown to others right away). */

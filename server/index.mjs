@@ -9,6 +9,7 @@
 //   get a read-only connection.
 // - Accounts: Better Auth under /api/auth/* (server/auth.mjs).
 // - Boards and sharing: /api/boards... (server/boards.mjs).
+// - Your settings (cursor / avatar color): /api/me (server/me.mjs).
 // - Everything except board content is kept in server/data/niro.sqlite (Node's
 //   built-in SQLite, Node 22.5+).
 // - The app talks to all of it through the Vite dev server (vite.config.ts forwards
@@ -23,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { fromNodeHeaders, toNodeHandler } from 'better-auth/node';
 import { createAuth } from './auth.mjs';
 import { HttpError, createBoards, readJson, setupBoardTables } from './boards.mjs';
+import { createSettings } from './me.mjs';
 
 const PORT = Number(process.env.PORT ?? 1234);
 const DATA = join(dirname(fileURLToPath(import.meta.url)), 'data');
@@ -34,9 +36,11 @@ await mkdir(DATA, { recursive: true });
 
 const db = new DatabaseSync(join(DATA, 'niro.sqlite'));
 db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
-const auth = await createAuth(db, DATA);
+// boards is set up below; a guest who makes an account takes their link-opened boards along.
+const auth = await createAuth(db, DATA, { onGuestLinked: (guestId, userId) => boards.moveGuest(guestId, userId) });
 const authHandler = toNodeHandler(auth);
 setupBoardTables(db);
+const settings = createSettings(db);
 
 function boardFile(name) {
   if (!safeId(name)) throw new Error(`Refused board id "${name}"`);
@@ -61,17 +65,20 @@ function sendJson(response, status, body) {
   response.end(JSON.stringify(body));
 }
 
-/** The /api/boards... routes (signed-in only, same-origin only). */
-async function handleBoardsApi(request, response, path) {
+/**
+ * Our own API routes (signed-in only, same-origin only): /api/boards... and /api/me.
+ * `route(method, parts, body, user)` returns [status, body]; parts follow /api/<name>/.
+ */
+async function handleApi(request, response, path, route) {
   try {
     // Requests must come from the page itself (another site can't use your cookie here).
     const origin = request.headers.origin;
     if (origin && new URL(origin).host !== request.headers.host) throw new HttpError(403, 'Wrong origin.');
     const session = await auth.api.getSession({ headers: fromNodeHeaders(request.headers) });
     if (!session) throw new HttpError(401, 'Sign in first.');
-    const parts = path.split('/').slice(3).filter(Boolean); // ['', 'api', 'boards', ...]
+    const parts = path.split('/').slice(3).filter(Boolean); // ['', 'api', '<name>', ...]
     const body = ['POST', 'PATCH'].includes(request.method) ? await readJson(request) : {};
-    const [status, result] = await boards.handle(request.method, parts, body, session.user, safeId);
+    const [status, result] = await route(request.method, parts, body, session.user);
     sendJson(response, status, result);
   } catch (err) {
     if (err instanceof HttpError) sendJson(response, err.status, { error: err.message });
@@ -93,7 +100,11 @@ const server = new Server({
       throw null; // handled: stop Hocuspocus from answering too
     }
     if (path === '/api/boards' || path.startsWith('/api/boards/')) {
-      await handleBoardsApi(request, response, path);
+      await handleApi(request, response, path, (method, parts, body, user) => boards.handle(method, parts, body, user, safeId));
+      throw null;
+    }
+    if (path === '/api/me') {
+      await handleApi(request, response, path, (method, _parts, body, user) => settings.handle(method, body, user));
       throw null;
     }
     if (path.startsWith('/api/')) {
@@ -106,7 +117,7 @@ const server = new Server({
   async onAuthenticate({ documentName, requestHeaders, connectionConfig }) {
     const session = await auth.api.getSession({ headers: requestHeaders });
     if (!session) throw deny('signed-out');
-    const { role, reason } = boards.access(documentName, session.user.id);
+    const { role, reason } = boards.access(documentName, session.user);
     if (!role) throw deny(reason);
     if (role === 'viewer') connectionConfig.readOnly = true;
     return { userId: session.user.id, role };

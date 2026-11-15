@@ -109,6 +109,28 @@ export function ShareDialog() {
         </button>
       </div>
     );
+  } else if (user.guest) {
+    body = (
+      <div className="share__empty">
+        <p>Guests can’t share boards. Create an account to keep boards and share them; the boards you opened come along.</p>
+        <div className="share__row-buttons">
+          {serverBoard && (
+            <button className="btn" onClick={copyLink}>
+              Copy link
+            </button>
+          )}
+          <button
+            className="btn btn--primary"
+            onClick={() => {
+              close();
+              openAccountDialog('sign-up');
+            }}
+          >
+            Create an account
+          </button>
+        </div>
+      </div>
+    );
   } else if (!serverBoard) {
     body = (
       <div className="share__empty">
@@ -143,8 +165,21 @@ export function ShareDialog() {
             Copy link
           </button>
         </div>
+        {isOwner && (
+          <label className={`share__guests${(meta.linkAccess ?? 'none') === 'none' ? ' is-disabled' : ''}`}>
+            <input
+              type="checkbox"
+              checked={!!meta.guestAccess}
+              disabled={busy || (meta.linkAccess ?? 'none') === 'none'}
+              onChange={(e) => void run(() => boardsApi.update(boardId, { guestAccess: e.target.checked }))}
+            />
+            Guests without an account can use the link too
+          </label>
+        )}
         <p className="share__help">
-          People always need a niro account and must be signed in. With "Only people invited", only the people below can open it.
+          {meta.guestAccess && (meta.linkAccess ?? 'none') !== 'none'
+            ? 'Anyone with the link can open it, also as a guest without an account (they pick a name).'
+            : 'People need a niro account and must be signed in. With "Only people invited", only the people below can open it.'}
         </p>
 
         {isOwner && (

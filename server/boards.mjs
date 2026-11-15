@@ -5,6 +5,9 @@
 // Roles: owner (one per board, can do everything), editor (edit and rename),
 // viewer (look only: the live connection is read-only). Link access: 'none'
 // (only the owner and members), 'view' or 'edit' (any signed-in person with the link).
+// Guests (signed in without an account, `isAnonymous`) only get link access, and
+// only on boards whose owner turned on `guest_access`; they can't own boards, be
+// invited, or see members' emails.
 
 const ROLES = new Set(['editor', 'viewer']);
 const LINK_ACCESS = new Set(['none', 'view', 'edit']);
@@ -42,7 +45,12 @@ export function setupBoardTables(db) {
       PRIMARY KEY (board_id, user_id)
     );
   `);
+  // Added with guest access (older databases get the column).
+  const columns = db.prepare('PRAGMA table_info(board)').all().map((c) => c.name);
+  if (!columns.includes('guest_access')) db.exec('ALTER TABLE board ADD COLUMN guest_access INTEGER NOT NULL DEFAULT 0');
 }
+
+const isGuest = (user) => !!user.isAnonymous;
 
 /**
  * Board access for the web API and the live connection. `boardFileOf(id)` gives
@@ -56,6 +64,11 @@ export function createBoards(db, { boardFileOf, removeFile, closeConnections }) 
     insert: db.prepare('INSERT INTO board (id, name, owner_id, link_access, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'),
     rename: db.prepare('UPDATE board SET name = ?, updated_at = ? WHERE id = ?'),
     link: db.prepare('UPDATE board SET link_access = ?, updated_at = ? WHERE id = ?'),
+    guests: db.prepare('UPDATE board SET guest_access = ?, updated_at = ? WHERE id = ?'),
+    moveRecents: db.prepare(
+      'INSERT OR IGNORE INTO board_recent (board_id, user_id, opened_at) SELECT board_id, ?, opened_at FROM board_recent WHERE user_id = ?',
+    ),
+    dropRecents: db.prepare('DELETE FROM board_recent WHERE user_id = ?'),
     touch: db.prepare('UPDATE board SET updated_at = ? WHERE id = ?'),
     del: db.prepare('DELETE FROM board WHERE id = ?'),
     delMembers: db.prepare('DELETE FROM board_member WHERE board_id = ?'),
@@ -68,7 +81,7 @@ export function createBoards(db, { boardFileOf, removeFile, closeConnections }) 
     setMember: db.prepare(
       'INSERT INTO board_member (board_id, user_id, role, added_at) VALUES (?, ?, ?, ?) ON CONFLICT (board_id, user_id) DO UPDATE SET role = excluded.role',
     ),
-    userByEmail: db.prepare('SELECT id, name, email FROM "user" WHERE lower(email) = lower(?)'),
+    userByEmail: db.prepare('SELECT id, name, email FROM "user" WHERE lower(email) = lower(?) AND NOT coalesce("isAnonymous", 0)'),
     userById: db.prepare('SELECT id, name, email FROM "user" WHERE id = ?'),
     members: db.prepare(
       'SELECT m.user_id AS id, m.role, u.name, u.email FROM board_member m JOIN "user" u ON u.id = m.user_id WHERE m.board_id = ? ORDER BY m.added_at',
@@ -82,39 +95,50 @@ export function createBoards(db, { boardFileOf, removeFile, closeConnections }) 
     `),
   };
 
-  /** This person's role on a board: 'owner' | 'editor' | 'viewer', or null (no access / no board). */
-  function roleFor(board, userId) {
+  /**
+   * This person's role on a board: 'owner' | 'editor' | 'viewer', or null (no access
+   * / no board). `user`: { id, isAnonymous }.
+   */
+  function roleFor(board, user) {
     if (!board) return null;
-    if (board.owner_id === userId) return 'owner';
-    const m = q.member.get(board.id, userId);
+    if (board.owner_id === user.id) return 'owner';
+    const m = q.member.get(board.id, user.id);
     if (m) return m.role;
+    if (isGuest(user) && !board.guest_access) return null;
     return board.link_access === 'edit' ? 'editor' : board.link_access === 'view' ? 'viewer' : null;
   }
 
   /** Whether the role comes only from link access (then the board goes into their list as "recent"). */
-  const viaLink = (board, userId) => board.owner_id !== userId && !q.member.get(board.id, userId);
+  const viaLink = (board, user) => board.owner_id !== user.id && !q.member.get(board.id, user.id);
 
-  const view = (board, userId) => {
+  const view = (board, user) => {
     const owner = q.userById.get(board.owner_id);
     return {
       id: board.id,
       name: board.name,
-      role: roleFor(board, userId),
+      role: roleFor(board, user),
       ownerName: owner?.name ?? '',
       linkAccess: board.link_access,
+      guestAccess: !!board.guest_access,
       createdAt: board.created_at,
       updatedAt: board.updated_at,
     };
   };
 
   /** Check for the live connection: the role, or an error reason for the page. */
-  function access(boardId, userId) {
+  function access(boardId, user) {
     const board = q.board.get(boardId);
     if (!board) return { reason: 'not-found' };
-    const role = roleFor(board, userId);
-    if (!role) return { reason: 'no-access' };
-    if (viaLink(board, userId)) q.recent.run(boardId, userId, Date.now());
+    const role = roleFor(board, user);
+    if (!role) return { reason: isGuest(user) ? 'guest-no-access' : 'no-access' };
+    if (viaLink(board, user)) q.recent.run(boardId, user.id, Date.now());
     return { role };
+  }
+
+  /** A guest made an account (or signed in): their link-opened boards go with them. */
+  function moveGuest(guestId, userId) {
+    q.moveRecents.run(userId, guestId);
+    q.dropRecents.run(guestId);
   }
 
   const needBoard = (id) => {
@@ -122,8 +146,9 @@ export function createBoards(db, { boardFileOf, removeFile, closeConnections }) 
     if (!board) throw new HttpError(404, 'That board doesn’t exist (it may have been deleted).');
     return board;
   };
-  const needRole = (board, userId, allowed) => {
-    const role = roleFor(board, userId);
+  const needRole = (board, user, allowed) => {
+    const role = roleFor(board, user);
+    if (!role && isGuest(user)) throw new HttpError(403, 'That board doesn’t let guests in. Create an account or sign in to open it.');
     if (!role) throw new HttpError(403, 'You don’t have access to that board. Ask its owner to share it with you.');
     if (!allowed.includes(role)) throw new HttpError(403, 'Only the board’s owner can do that.');
     return role;
@@ -140,19 +165,20 @@ export function createBoards(db, { boardFileOf, removeFile, closeConnections }) 
     const [id, sub, memberId] = parts;
 
     if (!id) {
-      if (method === 'GET') return [200, q.list.all(user.id).map((b) => view(b, user.id))];
+      if (method === 'GET') return [200, q.list.all(user.id).map((b) => view(b, user)).filter((b) => b.role)];
       if (method === 'POST') {
         // Create a board (also used to move a board from this device into the account,
         // keeping its id; a board file nobody owns yet is taken over by its first owner).
+        if (isGuest(user)) throw new HttpError(403, 'Guests can’t keep boards on the server. Create an account to do that.');
         if (!safeId(body.id)) throw new HttpError(400, 'Bad board id.');
         const name = cleanName(body.name);
         const existing = q.board.get(body.id);
         if (existing) {
           if (existing.owner_id !== user.id) throw new HttpError(409, 'A board with that id belongs to someone else.');
-          return [200, view(existing, user.id)];
+          return [200, view(existing, user)];
         }
         q.insert.run(body.id, name, user.id, 'none', now, now);
-        return [201, view(q.board.get(body.id), user.id)];
+        return [201, view(q.board.get(body.id), user)];
       }
       throw new HttpError(405, 'Method not allowed.');
     }
@@ -162,25 +188,30 @@ export function createBoards(db, { boardFileOf, removeFile, closeConnections }) 
 
     if (!sub) {
       if (method === 'GET') {
-        needRole(board, user.id, ['owner', 'editor', 'viewer']);
-        if (viaLink(board, user.id)) q.recent.run(id, user.id, now);
-        return [200, view(board, user.id)];
+        needRole(board, user, ['owner', 'editor', 'viewer']);
+        if (viaLink(board, user)) q.recent.run(id, user.id, now);
+        return [200, view(board, user)];
       }
       if (method === 'PATCH') {
         if (body.name !== undefined) {
-          needRole(board, user.id, ['owner', 'editor']);
+          needRole(board, user, ['owner', 'editor']);
           q.rename.run(cleanName(body.name), now, id);
         }
         if (body.linkAccess !== undefined) {
-          needRole(board, user.id, ['owner']);
+          needRole(board, user, ['owner']);
           if (!LINK_ACCESS.has(body.linkAccess)) throw new HttpError(400, 'Unknown link access.');
           q.link.run(body.linkAccess, now, id);
           closeConnections(id); // everyone reconnects with their new role
         }
-        return [200, view(q.board.get(id), user.id)];
+        if (body.guestAccess !== undefined) {
+          needRole(board, user, ['owner']);
+          q.guests.run(body.guestAccess ? 1 : 0, now, id);
+          closeConnections(id);
+        }
+        return [200, view(q.board.get(id), user)];
       }
       if (method === 'DELETE') {
-        const role = needRole(board, user.id, ['owner', 'editor', 'viewer']);
+        const role = needRole(board, user, ['owner', 'editor', 'viewer']);
         if (role !== 'owner') {
           // Not the owner: just take it out of this person's list.
           q.leave.run(id, user.id);
@@ -202,12 +233,14 @@ export function createBoards(db, { boardFileOf, removeFile, closeConnections }) 
 
     if (!memberId) {
       if (method === 'GET') {
-        needRole(board, user.id, ['owner', 'editor', 'viewer']);
+        needRole(board, user, ['owner', 'editor', 'viewer']);
         const owner = q.userById.get(board.owner_id);
-        return [200, [{ id: owner?.id ?? board.owner_id, name: owner?.name ?? '', email: owner?.email ?? '', role: 'owner' }, ...q.members.all(id)]];
+        const list = [{ id: owner?.id ?? board.owner_id, name: owner?.name ?? '', email: owner?.email ?? '', role: 'owner' }, ...q.members.all(id)];
+        // Guests see names only, never people's emails.
+        return [200, isGuest(user) ? list.map((m) => ({ ...m, email: '' })) : list];
       }
       if (method === 'POST') {
-        needRole(board, user.id, ['owner']);
+        needRole(board, user, ['owner']);
         if (!ROLES.has(body.role)) throw new HttpError(400, 'Pick editor or viewer.');
         const invited = typeof body.email === 'string' ? q.userByEmail.get(body.email.trim()) : undefined;
         if (!invited) throw new HttpError(404, 'No niro account uses that email. Ask them to create one first.');
@@ -220,7 +253,7 @@ export function createBoards(db, { boardFileOf, removeFile, closeConnections }) 
     }
 
     if (method === 'PATCH') {
-      needRole(board, user.id, ['owner']);
+      needRole(board, user, ['owner']);
       if (!ROLES.has(body.role)) throw new HttpError(400, 'Pick editor or viewer.');
       if (!q.member.get(id, memberId)) throw new HttpError(404, 'Not a member of this board.');
       q.setMember.run(id, memberId, body.role, now);
@@ -229,7 +262,7 @@ export function createBoards(db, { boardFileOf, removeFile, closeConnections }) 
     }
     if (method === 'DELETE') {
       // The owner removes someone, or someone leaves.
-      if (memberId !== user.id) needRole(board, user.id, ['owner']);
+      if (memberId !== user.id) needRole(board, user, ['owner']);
       q.leave.run(id, memberId);
       q.leaveRecent.run(id, memberId);
       closeConnections(id);
@@ -238,7 +271,7 @@ export function createBoards(db, { boardFileOf, removeFile, closeConnections }) 
     throw new HttpError(405, 'Method not allowed.');
   }
 
-  return { access, handle, touch: (id) => q.touch.run(Date.now(), id) };
+  return { access, handle, moveGuest, touch: (id) => q.touch.run(Date.now(), id) };
 }
 
 /** Read a small JSON request body. */

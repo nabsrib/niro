@@ -138,8 +138,11 @@ your own network.
   deleted boards) updates in every tab too; each tab keeps its own view, selection and undo
 - Accounts (with `npm run server`): "Sign in" top-right opens a dialog to sign in or create an
   account (name, email, password of 8+ characters, stored only as a secure hash). Signed in, your
-  avatar there opens a menu with your name and email, Change name and Sign out; others on a board
-  see your account name. All tabs of a browser share one sign-in and switch together
+  avatar there opens a menu with your name and email, Account settings and Sign out; others on a
+  board see your account name. Account settings: change your name, pick your color (cursor and
+  avatar, one of 8; kept with your account, so it is the same on every device) and change your
+  password (needs the current one; signs you out on your other devices). All tabs of a browser
+  share one sign-in and switch together
 - Boards with your account: signed in, the boards menu lists your account's boards (yours, and
   ones shared with you, tagged "Yours", "Can edit · Owner" or "Can view · Owner") plus boards still
   only in this browser ("This browser"). New boards and copies go into your account. Right after
@@ -152,6 +155,12 @@ your own network.
   the member list. Removing a board shared with you takes it out of your list; the owner's Delete
   removes it for everyone. A link to a board you may open adds it to your list; otherwise niro
   says why (sign in, no access, deleted)
+- Guests (like Miro): the owner can tick "Guests without an account can use the link too" in
+  Share (needs link access on). Opening a board link signed out offers "Join as a guest" (just a
+  name; others see "Name (guest)") or sign in. Guests open boards that let guests in, with the
+  link's role, and see member names but not emails; their own new boards stay in the browser and
+  they can't share. Creating an account (or signing in) from the guest menu keeps the boards they
+  opened; "Leave guest session" ends it
 - View only: on a board where you can only view, the toolbar shows "View only" with just the
   select and hand tools; you can look around, follow, present and export, but nothing changes
   (the server refuses changes too)
@@ -235,10 +244,11 @@ your own network.
 - `server/index.mjs`: niro server (`npm run server`): live boards (Hocuspocus, saved to `server/data/<id>.ydoc`) and the web API (`/api`), SQLite database `server/data/niro.sqlite`
 - `server/auth.mjs`: accounts (Better Auth: email + password, sessions, allowed hosts, secret)
 - `server/boards.mjs`: boards, members and link access in SQLite, roles, the `/api/boards` API
+- `server/me.mjs`: your settings kept with the account (color), `/api/me`
 - `src/account.ts`: your account on the page (`useAccount`, sign up / in / out, change name, tabs in step)
 - `src/api.ts`: calls to the boards API (`boardsApi`)
 - `src/components/ShareDialog.tsx`: Share dialog (link access, invite, members)
-- `src/components/Account.tsx`: Sign in button / account menu, sign-in and create-account dialog
+- `src/components/Account.tsx`: Sign in button / account menu, sign-in and create-account dialog, account settings (name, color, password)
 - `src/zorder.ts`: z-order as numbers on items (`sortByZ`, `assignZ` renumbers only the items that moved)
 - `src/exportImage.ts`: board content to SVG (both text modes), what an export area contains
 - `src/exportActions.ts`: text measuring, SVG → PNG, downloads
@@ -261,7 +271,8 @@ your own network.
 1. Real-time collaboration (Yjs + a WebSocket server), then accounts. Done: boards stored as Yjs
    documents, undo with Yjs (only your own changes), tabs kept in sync, server + live cursors and
    avatars, others' selections and typing, conflict fixes, follow / bring everyone, sign-in, boards
-   with your account, permissions, sharing and view only. Next: account polish (settings, color).
+   with your account, permissions, sharing and view only, account settings, guests. Before going
+   public: HTTPS.
    Later extra: typing together in one item (letter-by-letter merging)
 2. Level of detail when zoomed far out (simplified items), and a spatial index for 50k+ items
 3. Boards dashboard with thumbnails, and pasted images (stored in IndexedDB)

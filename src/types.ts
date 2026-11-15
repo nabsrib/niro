@@ -87,6 +87,8 @@ export interface BoardMeta {
   /** Id of the account this board came with (server boards only). */
   account?: string;
   linkAccess?: LinkAccess;
+  /** Guests (no account) may use the link too. */
+  guestAccess?: boolean;
   ownerName?: string;
 }
 

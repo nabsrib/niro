@@ -21,6 +21,8 @@ export interface ServerBoard {
   role: Role;
   ownerName: string;
   linkAccess: LinkAccess;
+  /** Whether guests (no account) may use the link too. */
+  guestAccess: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -56,11 +58,17 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
   return data as T;
 }
 
+/** Your own settings kept with your account (server/me.mjs). */
+export const meApi = {
+  get: () => api<{ color: string | null }>('GET', '/me'),
+  setColor: (color: string) => api<{ color: string }>('PATCH', '/me', { color }),
+};
+
 export const boardsApi = {
   list: () => api<ServerBoard[]>('GET', '/boards'),
   get: (id: string) => api<ServerBoard>('GET', `/boards/${id}`),
   create: (id: string, name: string) => api<ServerBoard>('POST', '/boards', { id, name }),
-  update: (id: string, patch: { name?: string; linkAccess?: LinkAccess }) => api<ServerBoard>('PATCH', `/boards/${id}`, patch),
+  update: (id: string, patch: { name?: string; linkAccess?: LinkAccess; guestAccess?: boolean }) => api<ServerBoard>('PATCH', `/boards/${id}`, patch),
   remove: (id: string) => api<{ deleted: boolean }>('DELETE', `/boards/${id}`),
   members: (id: string) => api<Member[]>('GET', `/boards/${id}/members`),
   invite: (id: string, email: string, role: Role) => api<Member>('POST', `/boards/${id}/members`, { email, role }),
