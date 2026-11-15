@@ -21,16 +21,31 @@ import type { Gap, Guide } from './snapping';
 import { prepareForInsert, type BoardContent } from './boardFile';
 import { ERASER_DEFAULT, HIGHLIGHTER_COLORS, HIGHLIGHTER_WIDTHS, PEN_COLORS, PEN_WIDTHS } from './pen';
 
-type Snapshot = {
-  items: Record<string, Item>;
-  order: string[];
-  connectors: Record<string, Connector>;
-};
 type Clip = { items: Item[]; connectors: Connector[] };
 type ConnectorPatch = Partial<Pick<Connector, 'style' | 'startArrow' | 'endArrow' | 'strokeWidth' | 'stroke' | 'bend' | 'label' | 'labelAt' | 'labelSize' | 'labelColor'>>;
 
-const HISTORY_LIMIT = 200;
 const PASTE_OFFSET = 24;
+
+/**
+ * Undo history. It lives in the open board's Yjs document (collab/bridge.ts sets
+ * it while a board is open), so undo only reverts this person's own changes.
+ * Steps follow `checkpoint()`: everything changed after one checkpoint, until the
+ * next, is one step.
+ */
+export interface History {
+  /** Start a new undo step with the next change. */
+  checkpoint(): void;
+  undo(): void;
+  redo(): void;
+  /** Forget all steps. */
+  clear(): void;
+}
+
+let history: History | null = null;
+
+export function setHistory(h: History | null) {
+  history = h;
+}
 
 export interface BoardState {
   items: Record<string, Item>;
@@ -86,8 +101,9 @@ export interface BoardState {
   regionPick: { box: Box; ratio: string; back: ExportArea } | null;
   /** Eraser settings: diameter in screen pixels. */
   eraser: { size: number };
-  past: Snapshot[];
-  future: Snapshot[];
+  /** Whether there is a step to undo / redo (kept up to date by the history). */
+  canUndo: boolean;
+  canRedo: boolean;
   clipboard: Clip;
 
   setTool(tool: Tool): void;
@@ -150,7 +166,7 @@ export interface BoardState {
   /** Go to a slide; clamped to the first/last slide. */
   goToSlide(index: number): void;
 
-  /** Record the current board state so the next change can be undone. */
+  /** Call before a change that should be undoable: the next change starts a new undo step. */
   checkpoint(): void;
   undo(): void;
   redo(): void;
@@ -202,14 +218,6 @@ export interface BoardState {
  * has a size. Boards are loaded by `initBoards` (boards.ts) before the app renders.
  */
 let needsCentering = true;
-
-const snapshot = (s: BoardState): Snapshot => ({
-  items: s.items,
-  order: s.order,
-  connectors: s.connectors,
-});
-
-const exists = (s: Snapshot, id: string) => !!(s.items[id] || s.connectors[id]);
 
 /**
  * Connectors after the items in `gone` are removed: connectors in `gone` are
@@ -266,8 +274,8 @@ export const useBoard = create<BoardState>()((set, get) => ({
   boardId: null,
   exportDialog: null,
   regionPick: null,
-  past: [],
-  future: [],
+  canUndo: false,
+  canRedo: false,
   clipboard: { items: [], connectors: [] },
 
   setTool: (tool) => set({ tool, editingId: null, connectHint: null }),
@@ -452,8 +460,6 @@ export const useBoard = create<BoardState>()((set, get) => ({
       camera,
       boardId,
       boards,
-      past: [],
-      future: [],
       selected: [],
       editingId: null,
       presenting: null,
@@ -465,6 +471,9 @@ export const useBoard = create<BoardState>()((set, get) => ({
       exportDialog: null,
       regionPick: null,
     });
+    // Loaded content is never an undo step (also when it lands in an already
+    // open board's document, as "Open JSON as a new board" does).
+    history?.clear();
   },
   openExport: (area) => {
     const s = get();
@@ -536,35 +545,17 @@ export const useBoard = create<BoardState>()((set, get) => ({
     set({ connectHint });
   },
 
-  checkpoint: () =>
-    set((s) => ({
-      past: [...s.past, snapshot(s)].slice(-HISTORY_LIMIT),
-      future: [],
-    })),
-  undo: () =>
-    set((s) => {
-      const prev = s.past[s.past.length - 1];
-      if (!prev) return {};
-      return {
-        ...prev,
-        past: s.past.slice(0, -1),
-        future: [snapshot(s), ...s.future],
-        selected: s.selected.filter((id) => exists(prev, id)),
-        editingId: null,
-      };
-    }),
-  redo: () =>
-    set((s) => {
-      const next = s.future[0];
-      if (!next) return {};
-      return {
-        ...next,
-        past: [...s.past, snapshot(s)],
-        future: s.future.slice(1),
-        selected: s.selected.filter((id) => exists(next, id)),
-        editingId: null,
-      };
-    }),
+  // The history writes the undone change to the document; the bridge brings it
+  // back into the store and drops selected ids that no longer exist.
+  checkpoint: () => history?.checkpoint(),
+  undo: () => {
+    set({ editingId: null });
+    history?.undo();
+  },
+  redo: () => {
+    set({ editingId: null });
+    history?.redo();
+  },
 
   addItem: (item) => {
     get().checkpoint();

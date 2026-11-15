@@ -1,45 +1,141 @@
 import { useBoard } from './store';
 import { openKV, type KV } from './kv';
-import { loadLegacyBoard, sanitizeBoard, type SavedBoard } from './persistence';
+import { loadLegacyBoard, sanitizeBoard } from './persistence';
 import { commitActiveEdit } from './editing';
 import { readBoardFile } from './boardFile';
 import { uid } from './geometry';
-import type { BoardMeta } from './types';
+import type { BoardMeta, Camera } from './types';
+import {
+  createBoardDoc,
+  decodeIntoBoardDoc,
+  encodeBoardDoc,
+  fillBoardDoc,
+  isFilled,
+  readBoard,
+  type BoardDoc,
+} from './collab/boardDoc';
+import { bindBoard } from './collab/bridge';
+import { bindTabSync } from './collab/tabSync';
+import { collabUrl, connectBoard } from './collab/connection';
 
 /**
  * Multiple boards. Storage keys (IndexedDB, or localStorage as a fallback):
  * - `boards`: the list of boards (`BoardMeta[]`)
  * - `current`: id of the board that was open last
- * - `board:<id>`: one board's content and camera (`SavedBoard`)
- * The open board autosaves 300 ms after each change. The URL hash
- * (`#board=<id>`) keeps the same board open across reloads.
+ * - `ydoc:<id>`: one board's content, as a Yjs document (collab/boardDoc.ts)
+ * - `camera:<id>`: your view of that board (not part of the shared content)
+ * - `board:<id>`: the board as saved before Yjs (`SavedBoard`). Read once, the
+ *   first time the board opens, to fill its document; then kept as a backup.
+ * The open board's document is bound to the store (collab/bridge.ts) and
+ * autosaves 300 ms after each change. The URL hash (`#board=<id>`) keeps the
+ * same board open across reloads. Tabs of this browser stay in step: the open
+ * board's changes through collab/tabSync.ts, the boards list through the
+ * `niro:boards` BroadcastChannel.
  */
 
 let kv: KV;
+const docKey = (id: string) => `ydoc:${id}`;
+const cameraKey = (id: string) => `camera:${id}`;
 const boardKey = (id: string) => `board:${id}`;
 const SAVE_DELAY = 300;
+
+/** The open board: its document and how to stop syncing it with the store. */
+let current: { id: string; bd: BoardDoc; stop: () => void } | null = null;
 
 const newMeta = (name: string): BoardMeta => {
   const now = Date.now();
   return { id: uid(), name, createdAt: now, updatedAt: now };
 };
 
-const emptyBoard = (): SavedBoard | null => null;
-
 const hashId = () => /(?:^#|&)board=([^&]+)/.exec(window.location.hash)?.[1];
 const setHash = (id: string) => {
   if (hashId() !== id) history.replaceState(null, '', `#board=${id}`);
 };
 
+/** Tells other tabs when the boards list changes (null where BroadcastChannel is missing). */
+let boardsChannel: BroadcastChannel | null = null;
+
 async function saveIndex(boards: BoardMeta[]) {
   useBoard.getState().setBoards(boards);
   await kv.set('boards', boards);
+  boardsChannel?.postMessage(boards);
+}
+
+/**
+ * Another tab changed the boards list (new, renamed, deleted, last edited). If it
+ * deleted the board open here, open another one, without saving the deleted one.
+ */
+function onBoardsChanged(boards: BoardMeta[]) {
+  const s = useBoard.getState();
+  s.setBoards(boards);
+  if (!s.boardId || boards.some((b) => b.id === s.boardId) || !boards.length) return;
+  close();
+  void open(boards[0].id, boards).then(() =>
+    useBoard.getState().showNotice('That board was deleted in another tab.', 'error'),
+  );
+}
+
+/**
+ * Read a board's document from storage. A board that has none yet (saved by an
+ * older version, or new) gets one, filled from its old save; returns that old
+ * save's camera too, and whether the new document still needs saving.
+ */
+async function loadDoc(id: string): Promise<{ bd: BoardDoc; camera?: Camera; fresh: boolean }> {
+  const bd = createBoardDoc();
+  const raw = await kv.get<unknown>(docKey(id));
+  try {
+    if (decodeIntoBoardDoc(bd, raw) && isFilled(bd)) return { bd, fresh: false };
+  } catch {
+    // Broken data: keep it aside for inspection and fall back to the old save.
+    await kv.set(`${docKey(id)}:broken`, raw);
+    useBoard.getState().showNotice('This board was damaged in storage; it was restored from an older copy.', 'error');
+  }
+  const old = sanitizeBoard(await kv.get(boardKey(id)));
+  const fresh = createBoardDoc();
+  bd.doc.destroy();
+  fillBoardDoc(fresh, old);
+  return { bd: fresh, camera: old?.camera, fresh: true };
+}
+
+/** Stop syncing the open board and drop its document (save it first with flushSave). */
+function close() {
+  window.clearTimeout(saveTimer);
+  saveTimer = undefined;
+  docDirty = false;
+  cameraDirty = false;
+  current?.stop();
+  current = null;
 }
 
 /** Load a board from storage into the store and remember it as the open one. */
 async function open(id: string, boards: BoardMeta[]) {
-  const data = sanitizeBoard(await kv.get(boardKey(id)));
+  close();
+  const { bd, camera: oldCamera, fresh } = await loadDoc(id);
+  const camera = (await kv.get<Camera>(cameraKey(id))) ?? oldCamera;
+  const data = sanitizeBoard({ ...readBoard(bd), camera });
   useBoard.getState().loadBoardData(data, id, boards);
+  const unbind = bindBoard(bd);
+  // Every change saves, also those from other tabs: whichever tab closes first,
+  // nothing is lost (both tabs hold the same merged document).
+  const onUpdate = () => {
+    docDirty = true;
+    scheduleSave();
+  };
+  bd.doc.on('update', onUpdate);
+  const stopTabs = bindTabSync(id, bd);
+  const stopServer = connectBoard(id, bd);
+  current = {
+    id,
+    bd,
+    stop: () => {
+      stopServer();
+      stopTabs();
+      unbind();
+      bd.doc.off('update', onUpdate);
+      bd.doc.destroy();
+    },
+  };
+  if (fresh) onUpdate();
   setHash(id);
   await kv.set('current', id);
 }
@@ -51,47 +147,78 @@ async function open(id: string, boards: BoardMeta[]) {
  */
 export async function initBoards(): Promise<void> {
   kv = await openKV();
+  if (typeof BroadcastChannel !== 'undefined') {
+    boardsChannel = new BroadcastChannel('niro:boards');
+    boardsChannel.onmessage = (e: MessageEvent<BoardMeta[]>) => onBoardsChanged(e.data);
+  }
   let boards = (await kv.get<BoardMeta[]>('boards')) ?? [];
   if (!boards.length) {
     const meta = newMeta('My board');
-    await kv.set(boardKey(meta.id), loadLegacyBoard() ?? emptyBoard());
+    const legacy = loadLegacyBoard();
+    if (legacy) await kv.set(boardKey(meta.id), legacy);
     boards = [meta];
     await kv.set('boards', boards);
   }
+  const fromLink = hashId();
+  if (fromLink) boards = await addShared(fromLink, boards);
   const last = await kv.get<string>('current');
-  const id = [hashId(), last].find((x) => x && boards.some((b) => b.id === x)) ?? boards[0].id;
+  const id = [fromLink, last].find((x) => x && boards.some((b) => b.id === x)) ?? boards[0].id;
   await open(id, boards);
   startAutosave();
-  // Editing the URL hash by hand (or back/forward) switches boards.
-  window.addEventListener('hashchange', () => {
+  // Editing the URL hash by hand (or back/forward, or pasting a shared link) switches boards.
+  window.addEventListener('hashchange', async () => {
     const target = hashId();
-    if (target && target !== useBoard.getState().boardId) void switchBoard(target);
+    if (!target || target === useBoard.getState().boardId) return;
+    await addShared(target, useBoard.getState().boards);
+    await switchBoard(target);
   });
   if (kv.kind === 'localstorage') {
     useBoard
       .getState()
       .showNotice('This browser blocked the board database, so boards are kept in smaller storage.', 'error');
   }
+  // Handy for debugging in the browser console during development.
+  if (import.meta.env.DEV) (window as unknown as { boardDoc: () => BoardDoc | undefined }).boardDoc = () => current?.bd;
 }
 
 // ---------- autosave ----------
 
 let saveTimer: number | undefined;
+let docDirty = false;
+let cameraDirty = false;
 let warnedFull = false;
 
-/** Save the open board now. */
+function scheduleSave() {
+  window.clearTimeout(saveTimer);
+  saveTimer = window.setTimeout(() => {
+    saveTimer = undefined;
+    void saveCurrent();
+  }, SAVE_DELAY);
+}
+
+/** Save what changed on the open board now: its document and/or your camera. */
 async function saveCurrent() {
+  const cur = current;
+  if (!cur) return;
   const s = useBoard.getState();
-  const id = s.boardId;
-  if (!id) return;
-  const data: SavedBoard = { items: s.items, order: s.order, connectors: s.connectors, camera: s.camera };
+  const saveDoc = docDirty;
+  const saveCamera = cameraDirty;
+  docDirty = false;
+  cameraDirty = false;
   try {
-    await kv.set(boardKey(id), data);
+    if (saveDoc) {
+      await kv.set(docKey(cur.id), encodeBoardDoc(cur.bd, kv.kind === 'localstorage'));
+      const boards = useBoard.getState().boards.map((b) => (b.id === cur.id ? { ...b, updatedAt: Date.now() } : b));
+      await saveIndex(boards);
+    }
+    if (saveCamera) await kv.set(cameraKey(cur.id), s.camera);
     warnedFull = false;
-    const boards = useBoard.getState().boards.map((b) => (b.id === id ? { ...b, updatedAt: Date.now() } : b));
-    await saveIndex(boards);
   } catch {
-    // Unlike before, a failed save is never silent.
+    // Try again with the next change; a failed save is never silent.
+    if (current === cur) {
+      docDirty ||= saveDoc;
+      cameraDirty ||= saveCamera;
+    }
     if (!warnedFull) {
       warnedFull = true;
       s.showNotice('Could not save the board: browser storage is full or blocked. Export it as JSON to keep a copy.', 'error');
@@ -108,16 +235,11 @@ async function flushSave() {
 }
 
 function startAutosave() {
+  // Content saves through the document's updates (see open); the camera through the store.
   useBoard.subscribe((s, prev) => {
-    if (s.boardId !== prev.boardId) return; // a board was just loaded, nothing changed
-    if (s.items === prev.items && s.order === prev.order && s.connectors === prev.connectors && s.camera === prev.camera) {
-      return;
-    }
-    window.clearTimeout(saveTimer);
-    saveTimer = window.setTimeout(() => {
-      saveTimer = undefined;
-      void saveCurrent();
-    }, SAVE_DELAY);
+    if (s.boardId !== prev.boardId || s.camera === prev.camera) return;
+    cameraDirty = true;
+    scheduleSave();
   });
   // Don't lose the last change when the tab is closed or hidden.
   const onHide = () => void flushSave();
@@ -136,6 +258,19 @@ export async function switchBoard(id: string) {
   await open(id, useBoard.getState().boards);
 }
 
+/**
+ * A link to a board this browser doesn't have yet (shared by someone else): add it
+ * to the list as "Shared board", so opening it loads the board from the server.
+ * Only with a server, and only for ids that look like board ids.
+ */
+async function addShared(id: string, boards: BoardMeta[]): Promise<BoardMeta[]> {
+  if (boards.some((b) => b.id === id) || !collabUrl() || !/^[A-Za-z0-9_-]{1,64}$/.test(id)) return boards;
+  const now = Date.now();
+  const next = [...boards, { id, name: nextName('Shared board', boards), createdAt: now, updatedAt: now }];
+  await saveIndex(next);
+  return next;
+}
+
 /** Next free "Board N" style name. */
 function nextName(base: string, boards: BoardMeta[]) {
   const names = new Set(boards.map((b) => b.name));
@@ -145,13 +280,12 @@ function nextName(base: string, boards: BoardMeta[]) {
   return `${base} ${n}`;
 }
 
-/** Create an empty board and open it. */
+/** Create an empty board and open it (its document is created on opening). */
 export async function createBoard(name?: string): Promise<string> {
   commitActiveEdit();
   await flushSave();
   const boards = useBoard.getState().boards;
   const meta = newMeta(name?.trim() || nextName('Untitled board', boards));
-  await kv.set(boardKey(meta.id), emptyBoard());
   const next = [...boards, meta];
   await saveIndex(next);
   await open(meta.id, next);
@@ -172,9 +306,12 @@ export async function duplicateBoard(id: string) {
   const boards = useBoard.getState().boards;
   const src = boards.find((b) => b.id === id);
   if (!src) return;
-  const data = await kv.get(boardKey(id));
   const meta = newMeta(nextName(`${src.name} copy`, boards));
-  await kv.set(boardKey(meta.id), data ?? emptyBoard());
+  // A board never opened since the Yjs update only has its old save: copy whatever exists.
+  for (const key of [docKey, cameraKey, boardKey]) {
+    const value = await kv.get<unknown>(key(id));
+    if (value !== undefined) await kv.set(key(meta.id), value);
+  }
   const next = [...boards, meta];
   await saveIndex(next);
   await open(meta.id, next);
@@ -187,14 +324,10 @@ export async function duplicateBoard(id: string) {
 export async function deleteBoard(id: string) {
   const s = useBoard.getState();
   const rest = s.boards.filter((b) => b.id !== id);
-  if (id === s.boardId) {
-    window.clearTimeout(saveTimer);
-    saveTimer = undefined;
-  }
-  await kv.del(boardKey(id));
+  if (id === s.boardId) close();
+  for (const key of [docKey, cameraKey, boardKey]) await kv.del(key(id));
   if (!rest.length) {
     const meta = newMeta('Untitled board');
-    await kv.set(boardKey(meta.id), emptyBoard());
     await saveIndex([meta]);
     await open(meta.id, [meta]);
     return;
@@ -214,6 +347,7 @@ export async function importAsNewBoard(file: File) {
     return;
   }
   await createBoard(file.name.replace(/\.json$/i, ''));
+  // The new board's document is bound to the store, so this content is written into it.
   const st = useBoard.getState();
   st.loadBoardData(
     {

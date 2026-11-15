@@ -1,15 +1,29 @@
 # niro
 
-A Miro-style infinite whiteboard. Step 1: a local, single-user canvas with no accounts and no backend.
+A Miro-style infinite whiteboard. Boards are kept in the browser; an optional small server lets
+several people edit the same board live. No accounts yet.
 
 ## Run
 
-Requires Node 18+ (this repo pins 22 in `.node-version`).
+Requires Node 22 (pinned in `.node-version`; the app alone runs on 18+, the server needs 22).
 
 ```bash
 npm install
 npm run dev
 ```
+
+For editing together, start the collaboration server in a second terminal (port 1234; boards are
+saved in `server/data/`):
+
+```bash
+npm run server
+```
+
+Other devices on your network: run `npm run dev -- --host`, open the "Network" address Vite prints,
+and share that link. Without the server, niro works as before (the top bar shows "Offline").
+To turn the connection off entirely, put `VITE_COLLAB_URL=off` in `.env.local` (or point it at
+another server, e.g. `ws://192.168.1.20:1234`). There are no accounts yet: anyone who can reach the
+server can edit a board whose link they have, so keep it on your own network.
 
 ## Stack
 
@@ -89,7 +103,8 @@ npm run dev
   Select some words and change their size, bold, italic, underline or color; with nothing selected
   the change applies to the whole item. Ctrl+B / Ctrl+I / Ctrl+U work too. Kept in saves, JSON and
   image exports
-- Undo/redo, duplicate, copy/cut/paste, delete, arrow-key nudge
+- Undo/redo (200 steps; undo only reverts your own changes, ready for shared boards), duplicate,
+  copy/cut/paste, delete, arrow-key nudge
 - Zoom controls and fit-to-content
 - Keyboard shortcuts panel: the round ? button next to the zoom controls (or press ?)
   lists every shortcut by group; shows Cmd/Option keys on a Mac
@@ -109,6 +124,31 @@ npm run dev
 - Auto-saves the open board to IndexedDB (the browser's database: lots of space, saves without
   freezing the page), falling back to localStorage when IndexedDB is blocked. A failed save
   (storage full) shows a notice instead of failing silently
+- Boards are stored as Yjs documents (shared data that merges edits made in several places): the
+  groundwork for real-time collaboration. Boards saved by older versions move over the first time
+  they open (the old copy stays as a backup). Your view (pan and zoom) is saved apart from the
+  board, since each person will have their own
+- Tabs stay in sync: open the same board in two tabs and changes in one show up in the other
+  right away, merged, never overwritten (no server needed). The boards list (new, renamed,
+  deleted boards) updates in every tab too; each tab keeps its own view, selection and undo
+- Real-time collaboration (with `npm run server`): everyone with the board's link edits it
+  together live, changes merge and are saved on the server; offline edits are kept and shared on
+  reconnect. Top-right: connection status (Live / Connecting… / Offline), an avatar per person
+  (click to glide to what they see), your own avatar (click to change your name) and Share (copies
+  the link). Other people's cursors show with their name and color, and fade after 10 s without
+  moving. Names and colors are picked at random the first time and remembered. A link to a board
+  you don't have yet adds it as "Shared board"
+- Seeing others' work: what each person has selected gets an outline in their color with their
+  name; the item someone is typing in shows a dashed outline and "Name is typing…" (starting to
+  type in the same item warns that the last one to finish keeps their text)
+- Follow (like Miro): click someone's avatar to follow their view (a frame in their color and a
+  "Following Name · Stop" pill); pan, zoom, click the board, press Esc or click the avatar again
+  to stop. You can't follow someone who follows you; a follower's avatar has a small dot and a pill
+  says who is following you. "Bring everyone" (people bar, or the presentation controls) makes
+  everyone follow you until you stop or the presentation ends
+- Clashing edits are tidied up automatically: a connector attached to an item someone else
+  deleted at the same moment gets a free end where the item was, slide decks lay out again after
+  two people change them at once, and deleting what someone is typing in tells them
 - Export image (niro menu, or the image button on a selected frame): PNG (1×, 2×, 3×) or SVG,
   white, board-grey or transparent background, of the whole board, the current view (what's on
   screen), the selection, one frame (cropped to it) or a custom area: an adjustable window on the
@@ -161,7 +201,15 @@ npm run dev
   (mark + wordmark, trimmed), `favicon.png` (64 px), `apple-touch-icon.png` (180 px)
 - `src/boards.ts`: boards list, startup loading and migration, autosave, switch / new / rename / duplicate / delete
 - `src/kv.ts`: key-value storage on IndexedDB with a localStorage fallback
-- `src/persistence.ts`: saved board shape, sanitizing loaded data, reading the pre-boards save
+- `src/persistence.ts`: board data shape, sanitizing loaded data, reading the pre-boards save
+- `src/collab/boardDoc.ts`: a board as a Yjs document (layout, filling it from an older save, reading it, storing it)
+- `src/collab/bridge.ts`: keeps the store and the open board's Yjs document in step, both ways; undo (`bindHistory`)
+- `src/collab/tabSync.ts`: keeps the open board in step with other tabs of the browser (BroadcastChannel)
+- `src/collab/connection.ts`: connection to the collaboration server (Hocuspocus provider), presence (`usePresence`: status, peers, you)
+- `src/collab/user.ts`: your name and color on shared boards (random at first, remembered)
+- `src/components/Presence.tsx`: live cursors, others' selections and typing, follow frame and pill, people bar (status, avatars, Bring everyone, Share)
+- `server/index.mjs`: collaboration server (`npm run server`), saves boards to `server/data/`
+- `src/zorder.ts`: z-order as numbers on items (`sortByZ`, `assignZ` renumbers only the items that moved)
 - `src/exportImage.ts`: board content to SVG (both text modes), what an export area contains
 - `src/exportActions.ts`: text measuring, SVG → PNG, downloads
 - `src/textStyle.ts`: text options (fields, defaults, sizes, colors) shared by the board and export
@@ -180,6 +228,9 @@ npm run dev
 
 ## Roadmap ideas
 
-1. Real-time collaboration (Yjs + a WebSocket server), then accounts
+1. Real-time collaboration (Yjs + a WebSocket server), then accounts. Done: boards stored as Yjs
+   documents, undo with Yjs (only your own changes), tabs kept in sync, server + live cursors and
+   avatars, others' selections and typing, conflict fixes, follow / bring everyone. Next: (optional)
+   typing together in one item, then accounts
 2. Level of detail when zoomed far out (simplified items), and a spatial index for 50k+ items
 3. Boards dashboard with thumbnails, and pasted images (stored in IndexedDB)

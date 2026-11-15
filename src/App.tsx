@@ -4,6 +4,7 @@ import { Notice } from './components/Notice';
 import { PenOptions } from './components/PenOptions';
 import { FrameOptions } from './components/FrameOptions';
 import { PresentButton, Presenter } from './components/Presenter';
+import { Cursors, FollowBanner, PeerSelections, PeopleBar } from './components/Presence';
 import { FocusMode } from './components/FocusMode';
 import { DevStats } from './components/DevStats';
 import { ExportDialog } from './components/ExportDialog';
@@ -20,6 +21,9 @@ export default function App() {
   return (
     <div className="app">
       <Canvas />
+      <PeerSelections />
+      <Cursors />
+      <FollowBanner />
       {presenting ? (
         <Presenter />
       ) : (
@@ -30,6 +34,7 @@ export default function App() {
           <PenOptions />
           <FrameOptions />
           <div className="top-right">
+            <PeopleBar />
             <PresentButton />
           </div>
           <div className="corner-controls">

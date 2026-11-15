@@ -954,6 +954,220 @@ button {
   fill: currentColor;
 }
 
+/* ---------- collaboration: people bar and live cursors ---------- */
+
+.people {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 4px 0 10px;
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.conn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.conn i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #b0b0b8;
+}
+
+.conn--online i { background: #2fa84f; }
+.conn--connecting i { background: #f2b01c; animation: conn-pulse 1s ease-in-out infinite alternate; }
+.conn--offline { color: #c0392b; }
+.conn--offline i { background: #e8416f; }
+
+@keyframes conn-pulse {
+  to { opacity: 0.3; }
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  box-shadow: 0 0 0 1px rgba(16, 16, 32, 0.08);
+  cursor: pointer;
+}
+
+.avatar:hover { filter: brightness(1.1); }
+.avatar--more { background: var(--border); color: var(--ink); cursor: default; }
+.avatar--me { box-shadow: 0 0 0 2px var(--accent); }
+
+.avatar--followed { box-shadow: 0 0 0 2px var(--c); }
+
+/* Someone following you: a small eye-like dot on their avatar. */
+.avatar--follows-me { position: relative; }
+.avatar--follows-me::after {
+  content: '';
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--ink);
+}
+
+.people-btn {
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.people-btn:hover { background: #f0f0f4; }
+.people-btn.is-on { background: var(--accent-soft); color: var(--accent); }
+.share-btn { background: var(--accent-soft); color: var(--accent); }
+.share-btn:hover { background: var(--accent-soft); filter: brightness(0.97); }
+
+/* Others' selections and typing, screen space under the cursors. */
+.peer-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.peer-sel {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid var(--c);
+  border-radius: 3px;
+}
+
+.peer-sel--typing { border-style: dashed; }
+
+.peer-tag {
+  position: absolute;
+  left: -2px;
+  bottom: calc(100% + 2px);
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--c);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Following someone: a frame in their color around the screen, and a pill. */
+.follow-frame {
+  position: absolute;
+  inset: 0;
+  border: 3px solid var(--c);
+  pointer-events: none;
+  z-index: 30;
+}
+
+.follow-pill {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 4px 0 14px;
+  border-radius: 17px;
+  background: var(--c, var(--accent));
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: var(--shadow);
+  z-index: 31;
+}
+
+.follow-pill--lead { --c: var(--accent); }
+.follow-pill--quiet { --c: rgba(26, 26, 26, 0.75); padding: 0 14px; height: 28px; font-weight: 500; }
+
+.follow-pill button {
+  height: 26px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.follow-pill button:hover { background: rgba(255, 255, 255, 0.4); }
+
+/* Screen-space layer over the board; never catches the mouse. */
+.cursors {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transition: transform 80ms linear, opacity 0.4s;
+}
+
+.cursor svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+  fill: var(--c);
+  stroke: #fff;
+  stroke-width: 1.2;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
+}
+
+.cursor__name {
+  position: absolute;
+  left: 14px;
+  top: 16px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--c);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cursor--idle { opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor { transition: opacity 0.4s; }
+  .conn--connecting i { animation: none; }
+}
+
 /* The current frame stays clear; a huge shadow dims everything around it. */
 .present-mask {
   position: absolute;
@@ -1002,6 +1216,20 @@ button {
 .present-exit:hover {
   background: #f0f0f4;
 }
+
+/* "Bring everyone" in the presentation controls. */
+.present-bring {
+  height: 36px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.present-bring:hover { background: #f0f0f4; }
+.present-bring.is-on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 
 /* Bottom-left button that opens the slides grid. */
 .present-grid-btn {

@@ -3,11 +3,16 @@ import type { Camera, Connector, Endpoint, Item } from './types';
 /** Where versions before multiple boards saved the single board. */
 const KEY = 'niro:board:v1';
 
+/**
+ * A board as the store loads it. Before Yjs this was also the stored shape
+ * (`board:<id>`, now only read once to fill the board's document); the camera
+ * is absent when the board has never been viewed.
+ */
 export interface SavedBoard {
   items: Record<string, Item>;
   order: string[];
   connectors: Record<string, Connector>;
-  camera: Camera;
+  camera?: Camera;
 }
 
 /**

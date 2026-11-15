@@ -5,6 +5,7 @@ import { fitCamera } from '../geometry';
 import { glideTo } from '../cameraGlide';
 import { Icons } from './Icons';
 import { tooltip } from '../shortcuts';
+import { BringEveryoneButton } from './Presence';
 
 /** Screen pixels kept around a slide's frame. */
 const SLIDE_PAD = 40;
@@ -115,6 +116,7 @@ function Presentation({ index, overview }: { index: number; overview: boolean })
           <Icons.chevronRight />
         </button>
         <div className="divider" />
+        <BringEveryoneButton className="present-bring" />
         <button className="present-exit" title={tooltip('Exit presentation', ['Esc'])} onClick={stopPresenting}>
           Exit
         </button>

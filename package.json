@@ -7,14 +7,19 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "server": "node server/index.mjs"
   },
   "dependencies": {
+    "@hocuspocus/provider": "^4.8.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "y-protocols": "^1.0.6",
+    "yjs": "^13.6.27",
     "zustand": "^5.0.3"
   },
   "devDependencies": {
+    "@hocuspocus/server": "^4.8.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.4.1",

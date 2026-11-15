@@ -6,8 +6,8 @@ import { TOOL_SHORTCUTS, tooltip } from '../shortcuts';
 export function Toolbar() {
   const tool = useBoard((s) => s.tool);
   const penMode = useBoard((s) => s.penMode);
-  const canUndo = useBoard((s) => s.past.length > 0);
-  const canRedo = useBoard((s) => s.future.length > 0);
+  const canUndo = useBoard((s) => s.canUndo);
+  const canRedo = useBoard((s) => s.canRedo);
   const { setTool, undo, redo } = useBoard.getState();
 
   return (
