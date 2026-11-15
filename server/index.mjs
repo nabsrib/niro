@@ -54,8 +54,19 @@ const boards = createBoards(db, {
       if (err.code !== 'ENOENT') throw err;
     });
   },
-  closeConnections: (id) => server.hocuspocus.closeConnections(id),
+  closeConnections: (id) => dropConnections(id),
 });
+
+/**
+ * Access to a board changed (role, link access, guests, removal, deletion): close
+ * everyone's whole socket to it. Their page reconnects by itself and is checked
+ * again with the new access. (Hocuspocus's own closeConnections only closes the
+ * board inside the socket, and the page then never signs in to it again.)
+ */
+function dropConnections(id) {
+  const document = server.hocuspocus.documents.get(id);
+  document?.connections.forEach((_clients, connection) => connection.webSocket.close(4000, 'Access changed'));
+}
 
 /** An error the page receives as the reason its live connection was refused. */
 const deny = (reason) => Object.assign(new Error(reason), { reason });

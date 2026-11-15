@@ -1,202 +1,213 @@
-# niro
+<p align="center">
+  <img src="public/logo-full.png" alt="Niro logo" width="150">
+</p>
 
-A Miro-style infinite whiteboard. Boards are kept in the browser; an optional small server lets
-several people edit the same board live and sign in with an account.
+<h1 align="center">niro</h1>
 
-## Run
+<p align="center">
+  <strong>An open, Miro-style infinite whiteboard: draw, plan and present together in real time.</strong>
+</p>
 
-Requires Node 24 (pinned in `.node-version`; the app alone runs on 18+, the server needs 22.5+ for
-its built-in SQLite).
+<p align="center">
+  <img alt="React 19" src="https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=white">
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white">
+  <img alt="Vite" src="https://img.shields.io/badge/Vite-6-646cff?logo=vite&logoColor=white">
+  <img alt="Yjs" src="https://img.shields.io/badge/Yjs-CRDT-f5a623">
+  <img alt="Node 24" src="https://img.shields.io/badge/Node-24-339933?logo=nodedotjs&logoColor=white">
+  <img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen">
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-blue"></a>
+</p>
+
+<p align="center">
+  <a href="#features">Features</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#collaboration-and-accounts">Collaboration</a> ·
+  <a href="#keyboard-shortcuts">Shortcuts</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#roadmap">Roadmap</a>
+</p>
+
+---
+
+## Table of contents
+
+- [About](#about)
+- [Features](#features)
+- [Quick start](#quick-start)
+- [Collaboration and accounts](#collaboration-and-accounts)
+- [Using niro on your phone or another computer](#using-niro-on-your-phone-or-another-computer)
+- [Configuration](#configuration)
+- [Keyboard shortcuts](#keyboard-shortcuts)
+- [How it works](#how-it-works)
+- [Project structure](#project-structure)
+- [Scripts](#scripts)
+- [Where your data lives](#where-your-data-lives)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
+- [Acknowledgements](#acknowledgements)
+
+## About
+
+niro is an infinite canvas for sticky notes, shapes, connectors, freehand drawing, frames and slide decks,
+built with React, TypeScript and Yjs. It works fully in the browser on its own (boards are saved locally,
+no account needed), and a small optional server adds what makes a whiteboard a team tool:
+
+- **Real-time collaboration**: everyone on a board edits at once, sees each other's cursors, selections and
+  typing, and can follow someone's view or bring everyone along while presenting.
+- **Accounts and sharing**: sign in, keep boards with your account on every device, share them with people
+  as editors or viewers, or open them to anyone with the link, including guests without an account.
+- **Offline first**: changes are saved in the browser right away and merge with everyone else's when the
+  connection comes back. Edits never overwrite each other.
+
+## Features
+
+### Canvas and items
+
+- **Infinite canvas**: wheel to pan, Ctrl/Cmd + wheel or pinch to zoom (5%–800%), right-drag (like Miro),
+  Space + drag, middle mouse or the Hand tool to pan; a dotted grid that adapts to the zoom.
+- **Items**: sticky notes, text, rectangles and ellipses (click to place, or drag to size).
+- **Select and arrange**: click, Shift-click and marquee selection, move, 8-handle resize (sticky notes keep
+  their shape; Shift locks it for others), duplicate, copy / cut / paste, delete, arrow-key nudge, bring to
+  front / send to back, color palette.
+- **Snapping**: edges and centers line up with nearby items (pink guides), and moving snaps to equal spacing
+  with gap markers. Hold Alt to move freely.
+- **Undo / redo**: 200 steps; undo only reverts your own changes, never someone else's.
+- **Zoom controls**, fit to content, and a keyboard shortcuts panel (the **?** button or the `?` key; shows
+  Cmd / Option on a Mac).
+
+### Text
+
+- Double-click (or Enter) a sticky, shape or text to type in it.
+- **Text options** in the toolbar: size, bold, italic, underline, horizontal and vertical alignment, text color.
+- **Rich text**: select some words while typing and style just those (size, bold, italic, underline, color);
+  Ctrl+B / Ctrl+I / Ctrl+U work too.
+
+### Connectors
+
+- Drag from the blue dots around a selected item, or use the Connector tool (L). Hovering a dot previews a
+  connected copy of the shape; clicking it creates that copy and starts editing its text.
+- Ends snap to side midpoints or float on the outline; **straight, elbow** (routes around items) **or curved**,
+  with arrowheads at either end. Drag an end to re-attach it; drag the diamond handle to shape a curve.
+- **Labels**: double-click a connector to type a label that follows the line; drag it along the line, set its
+  size and color.
+
+### Drawing
+
+- **Pen** (P): smoothed freehand strokes in 6 colors and 3 widths, selectable and editable like other items.
+- **Highlighter** (Shift+P): wide, see-through strokes; pen and highlighter remember their own settings.
+- **Eraser** (E): rubs out only the part of a stroke it passes over (4–80 px); never erases other items.
+
+### Frames, slide decks and presenting
+
+- **Frames** (F): titled areas behind everything; moving or copying a frame takes its contents along, and
+  frames nest. Formats like Miro: Custom, 16:9, 4:3, 1:1, A4, Phone and Slides.
+- **Slide decks**: slides laid out in one row; drag a frame onto a deck to insert it, drag slides to reorder,
+  drag one out to remove it.
+- **Focus mode**: dims everything outside one frame while you keep editing.
+- **Present** (Alt+P): every frame becomes a full-screen slide with smooth camera moves; a slides grid to
+  jump, reorder or hide slides.
+
+### Boards, saving and files
+
+- **Multiple boards** from the top-left menu: new, rename, duplicate, delete; the URL (`#board=…`) keeps the
+  same board open.
+- **Auto-save** to IndexedDB (localStorage when blocked), with a notice if storage is full.
+- **Tabs stay in sync**: the same board in two tabs updates live, without a server.
+- **Export image**: PNG (1×–3×) or SVG of the whole board, the view, the selection, a frame or a custom area;
+  SVG opens cleanly in Figma, Illustrator and Inkscape.
+- **JSON** export / import (Ctrl+S / Ctrl+O), add a file to a board, drop a `.json` on the canvas, or open it
+  as a new board.
+
+### Collaboration (with the niro server)
+
+- **Live editing**: changes appear for everyone at once and merge (built on Yjs CRDTs); offline edits are
+  shared on reconnect. Clashing edits are tidied up automatically.
+- **Presence**: named cursors in each person's color, avatars with the connection status (Live / Connecting /
+  Offline), outlines on what others have selected, and "Name is typing…" badges.
+- **Follow** someone's view by clicking their avatar, or **Bring everyone** to yours (also from the
+  presentation controls).
+
+### Accounts, sharing and guests (with the niro server)
+
+- **Accounts**: email + password (stored only as a secure hash), account settings for your name, color and
+  password; all tabs of a browser share one sign-in.
+- **Boards with your account**: listed on every device; boards made before signing in can be moved in.
+- **Sharing**: invite people by email as editor or viewer, change roles, remove people, and set the link to
+  only invited people, anyone with the link can view, or anyone with the link can edit.
+- **Guests**: owners can let people without an account use the link; guests join with just a name.
+- **View only**: viewers can look around, follow, present and export, but nothing changes (the server
+  enforces it too).
+
+### Performance
+
+- **Viewport culling**: only what is near the screen is rendered, so large boards stay smooth. Dev builds show
+  a "rendering X / Y" counter, and `niroStress(5000)` in the browser console fills a board with test items.
+
+## Quick start
+
+**Requirements:** [Node.js](https://nodejs.org/) 24 (pinned in `.node-version`). The app alone runs on
+Node 18+; the server needs 22.5+ for its built-in SQLite.
 
 ```bash
+git clone https://github.com/nabsrib/niro.git
+cd niro
 npm install
 npm run dev
 ```
 
-For editing together and accounts, start the niro server in a second terminal (port 1234; boards,
-accounts and its secret are kept in `server/data/`, which is git-ignored):
+Open **http://localhost:5173**. That's all you need for a local, single-person whiteboard.
+
+## Collaboration and accounts
+
+Start the niro server in a second terminal:
 
 ```bash
 npm run server
 ```
 
-The app reaches the server through the Vite dev server (`/api` and `/collab` are forwarded to port
-1234), so there is only one address to open. Other devices on your network: run
-`npm run dev -- --host`, open the "Network" address Vite prints, and share that link. Without the
-server, niro works as before, signed out (the top bar shows "Offline"). To turn the live connection
-off, put `VITE_COLLAB_URL=off` in `.env.local` (or point it at another server). Signing in works on
-`localhost` and private network addresses (192.168.x.x, 10.x.x.x, 172.x.x.x); add other host names
-with `NIRO_HOSTS` when starting the server. Live boards need a signed-in account with access to the
-board (owner, member, or link access). The server speaks plain http (no HTTPS yet), so keep it on
-your own network.
+It listens on port 1234 and keeps its data in `server/data/` (git-ignored). The app reaches it through the
+Vite dev server, so you still only open **http://localhost:5173**. Then:
 
-## Stack
+1. Click **Sign in** (top-right) and create an account.
+2. Create a board, click **Share**, and invite someone by the email of their niro account, or set the link
+   to "Anyone with the link can view / edit".
+3. Send them the link. They see your cursor, and you see theirs.
 
-- **React 19 + TypeScript + Vite**
-- **Zustand** for board state (items, selection, camera, undo history)
-- **DOM rendering with a camera transform**: every item is an absolutely positioned
-  element inside one "world" layer. Pan and zoom change a single CSS
-  `translate(...) scale(...)`. Selection handles and toolbars render in screen space
-  so they stay a constant size at any zoom.
+Without the server, niro keeps working on its own (the top bar shows "Offline" for shared boards).
 
-## Features
+> **Note:** the server uses plain HTTP and is meant for your own computer or home network. Putting niro on
+> the internet needs HTTPS first (on the roadmap).
 
-- Infinite canvas: wheel to pan, Ctrl/Cmd + wheel or pinch to zoom (5%–800%),
-  right-drag (like Miro), Space + drag, middle mouse or the Hand tool to pan, dotted grid that
-  adapts to zoom
-- Items: sticky notes, text, rectangles, ellipses (click to place, or drag to size)
-- Connectors: drag from the blue dots around a selected item, or use the Connector tool (L).
-  Hovering a dot previews a connected copy of the shape; clicking it creates that copy
-  (sliding sideways if the spot is taken) and starts editing its text.
-  Ends snap to side midpoints or float on the outline; straight, elbow (routes around the
-  connected items) or curved; arrowheads at either end; drag an end to re-attach it.
-  Curved connectors have a diamond handle in the middle: drag it to shape the curve,
-  double-click it (or use Reset curve) to go back to the automatic curve.
-  Labels: double-click a connector (or select it and press Enter, or use the T button)
-  to type a label. The line breaks around the text, the label follows the line when
-  items move, and you can drag it along the line. Clearing the text removes it.
-  With a labeled connector selected, its toolbar sets the label's text size and color
-- Snapping: moving or resizing aligns edges and centers with items on screen, with pink
-  alignment guides. Moving also snaps to equal spacing: centered between two neighbors, or
-  repeating the gap next to a neighbor (A and B are 40 apart, so C snaps 40 past B), with
-  pink gap markers showing the distance. It only pulls within a few pixels of the spot;
-  hold Alt to move freely
-- Pen (P): freehand drawing with 6 colors and 3 widths (widths are in screen pixels at
-  the zoom you draw at). Strokes are smoothed, are selected by clicking the line
-  itself, and can be moved, resized, recolored, copied and exported like other items
-- Highlighter (Shift+P, or the mode switch at the top of the pen options): wide,
-  see-through strokes in 5 colors and 3 widths that let text and shapes show through.
-  The pen and highlighter each remember their own color and width
-- Eraser (E, or the third button in the pen options): rubs out only the part of a pen or
-  highlighter stroke it passes over, splitting the stroke where needed. A vertical slider
-  in the pen options sets its size (4–80 px), with a matching circle cursor; each drag is
-  one undo step. It never erases sticky notes,
-  shapes, text, frames or connectors
-- Frames (F): titled white areas that sit behind everything. Drag a frame by its title to
-  move it with everything inside (items whose center is in it); click its body to
-  marquee-select inside; double-click the title to rename; duplicating a frame copies its contents.
-  Frames nest: a frame inside a larger frame belongs to it (items belong to the smallest
-  frame their center is in), draws in front of it, and moves and copies with it
-- Frame tool formats (F opens a flyout, like Miro): Custom (click for 640×360 or drag to
-  size), 16:9, 4:3, 1:1, A4, Phone (click to place) and Slides
-- Slide decks (Frame tool → Slides, click the canvas): a deck holds slides in one row and
-  resizes to fit. A bar above it has Play, Focus and + Slide, and a round + sits after the
-  last slide. Drag an existing frame over the deck: a dark line shows where it will join the
-  row, and on release it becomes a slide there (it never merges into the slide under it).
-  Drag a slide along the row the same way to reorder, drag one out to take it out of the
-  deck; deleting a slide closes the gap
-- Selected frame toolbar: present from this frame, focus, hide from / show in the presentation
-  (decks: play the deck, add a slide)
-- Focus mode: dims everything outside one frame while you keep editing; ‹ › step through the
-  slides (only that deck's slides when focusing a deck slide); leave with Exit or Esc (with
-  nothing selected)
-- Present (top-right button, niro menu or Alt+P): every frame on the board becomes a full-screen
-  slide (decks as their slides), starting at the selected frame. The camera glides between
-  slides and everything outside is dimmed. Arrows, Space, PageUp/PageDown, Home/End navigate;
-  Esc exits and restores the view. The bottom-left grid button opens the slides grid: click a
-  card to jump, drag cards to reorder the presentation, use the eye to hide a slide. Order and
-  hidden state are saved with the board and undoable; frames never reordered follow in
-  reading order
-- Select, Shift-click and marquee multi-select, move, 8-handle resize
-  (sticky notes keep their aspect ratio; Shift locks it for others)
-- Inline text editing: double-click (or Enter) a sticky, rectangle, ellipse or text to type in it;
-  color palette, bring to front / send to back
-- Text options in the toolbar for stickies, shapes and text (like Miro): size, bold, italic,
-  underline, horizontal align (left / center / right), vertical align for stickies and shapes
-  (top / middle / bottom) and text color. Saved, undoable, and kept in image exports
-- Rich text (like Miro): while typing in a sticky, shape or text, the text toolbar stays open.
-  Select some words and change their size, bold, italic, underline or color; with nothing selected
-  the change applies to the whole item. Ctrl+B / Ctrl+I / Ctrl+U work too. Kept in saves, JSON and
-  image exports
-- Undo/redo (200 steps; undo only reverts your own changes, ready for shared boards), duplicate,
-  copy/cut/paste, delete, arrow-key nudge
-- Zoom controls and fit-to-content
-- Keyboard shortcuts panel: the round ? button next to the zoom controls (or press ?)
-  lists every shortcut by group; shows Cmd/Option keys on a Mac
-- Viewport culling: only items and connectors near the screen are rendered (plus selected and
-  edited ones), so very large boards stay smooth; everything is still saved, exported and undoable.
-  Dev builds show a "rendering X / Y" counter, and `niroStress(5000)` in the browser console fills
-  the board with test items (Ctrl+Z removes them)
-- Branding: the Niro logo as the browser tab icon and on an animated loading screen (the mark
-  pops in and breathes, a bar slides; it stays until the boards load, at least 0.8 s, then fades
-  into the board; "reduce motion" turns the movement off); the top-left bar
-  (like Miro's) shows the logo mark, the "Niro" wordmark and the board name, plus a quick
-  export-image button
-- Multiple boards: the top-left bar shows "Niro | board name"; its menu lists every board
-  (open board on top) to switch, plus New board, Rename (or double-click), Duplicate and Delete
-  (asks first; deleting the last board leaves a new empty one). The URL (`#board=…`) keeps the
-  same board open on reload. A board from older versions moves in automatically as "My board"
-- Auto-saves the open board to IndexedDB (the browser's database: lots of space, saves without
-  freezing the page), falling back to localStorage when IndexedDB is blocked. A failed save
-  (storage full) shows a notice instead of failing silently
-- Boards are stored as Yjs documents (shared data that merges edits made in several places): the
-  groundwork for real-time collaboration. Boards saved by older versions move over the first time
-  they open (the old copy stays as a backup). Your view (pan and zoom) is saved apart from the
-  board, since each person will have their own
-- Tabs stay in sync: open the same board in two tabs and changes in one show up in the other
-  right away, merged, never overwritten (no server needed). The boards list (new, renamed,
-  deleted boards) updates in every tab too; each tab keeps its own view, selection and undo
-- Accounts (with `npm run server`): "Sign in" top-right opens a dialog to sign in or create an
-  account (name, email, password of 8+ characters, stored only as a secure hash). Signed in, your
-  avatar there opens a menu with your name and email, Account settings and Sign out; others on a
-  board see your account name. Account settings: change your name, pick your color (cursor and
-  avatar, one of 8; kept with your account, so it is the same on every device) and change your
-  password (needs the current one; signs you out on your other devices). All tabs of a browser
-  share one sign-in and switch together
-- Boards with your account: signed in, the boards menu lists your account's boards (yours, and
-  ones shared with you, tagged "Yours", "Can edit · Owner" or "Can view · Owner") plus boards still
-  only in this browser ("This browser"). New boards and copies go into your account. Right after
-  signing in, niro offers to move this browser's boards into your account (or later: "Move … to my
-  account" in the menu). Signing out removes your account's boards from the browser (they stay on
-  the server). Signed out, boards are only in the browser and don't sync
-- Sharing (Share, top-right): the owner picks who may open the board with its link (only invited
-  people, anyone with the link can view, or can edit; always signed in), invites people by the
-  email of their niro account as editor or viewer, changes roles and removes people. Everyone sees
-  the member list. Removing a board shared with you takes it out of your list; the owner's Delete
-  removes it for everyone. A link to a board you may open adds it to your list; otherwise niro
-  says why (sign in, no access, deleted)
-- Guests (like Miro): the owner can tick "Guests without an account can use the link too" in
-  Share (needs link access on). Opening a board link signed out offers "Join as a guest" (just a
-  name; others see "Name (guest)") or sign in. Guests open boards that let guests in, with the
-  link's role, and see member names but not emails; their own new boards stay in the browser and
-  they can't share. Creating an account (or signing in) from the guest menu keeps the boards they
-  opened; "Leave guest session" ends it
-- View only: on a board where you can only view, the toolbar shows "View only" with just the
-  select and hand tools; you can look around, follow, present and export, but nothing changes
-  (the server refuses changes too)
-- Real-time collaboration (with `npm run server`): everyone with the board's link edits it
-  together live, changes merge and are saved on the server; offline edits are kept and shared on
-  reconnect. Top-right: connection status (Live / Connecting… / Offline), an avatar per person
-  (click to glide to what they see), your own avatar (click to change your name) and Share (copies
-  the link). Other people's cursors show with their name and color, and fade after 10 s without
-  moving. Names and colors are picked at random the first time and remembered. A link to a board
-  you don't have yet adds it as "Shared board"
-- Seeing others' work: what each person has selected gets an outline in their color with their
-  name; the item someone is typing in shows a dashed outline and "Name is typing…" (starting to
-  type in the same item warns that the last one to finish keeps their text)
-- Follow (like Miro): click someone's avatar to follow their view (a frame in their color and a
-  "Following Name · Stop" pill); pan, zoom, click the board, press Esc or click the avatar again
-  to stop. You can't follow someone who follows you; a follower's avatar has a small dot and a pill
-  says who is following you. "Bring everyone" (people bar, or the presentation controls) makes
-  everyone follow you until you stop or the presentation ends
-- Clashing edits are tidied up automatically: a connector attached to an item someone else
-  deleted at the same moment gets a free end where the item was, slide decks lay out again after
-  two people change them at once, and deleting what someone is typing in tells them
-- Export image (niro menu, or the image button on a selected frame): PNG (1×, 2×, 3×) or SVG,
-  white, board-grey or transparent background, of the whole board, the current view (what's on
-  screen), the selection, one frame (cropped to it) or a custom area: an adjustable window on the
-  board (drag to move, edges to resize, ratio chips Free / 16:9 / 4:3 / 1:1 / A4, live pixel size;
-  scrolling and zooming still work; Enter = Done, Esc = Cancel). PNG keeps text exactly as on the board; SVG splits text into lines so it opens correctly
-  in Figma, Illustrator and Inkscape. Drawn from board data, so off-screen items are included.
-  Very large areas are shrunk to fit the browser's PNG size limit (the dialog warns); frame
-  outlines, frame titles and thin lines keep a readable pixel size at any scale
-- JSON export/import from the niro menu (top-left): Export (Ctrl+S) downloads the board;
-  Open (Ctrl+O) replaces the board after confirming; Add drops a file in at the screen
-  center, or drop a .json file on the canvas to add it where you drop it. Files are
-  validated, invalid entries are skipped, and every import is one undo step. "Open JSON as a
-  new board" imports a file into a new board instead
+## Using niro on your phone or another computer
 
-## Shortcuts
+Devices on the same Wi-Fi can use niro running on your computer:
+
+```bash
+npm run dev -- --host
+```
+
+Vite prints a **Network** address such as `http://192.168.1.3:5173`. Open that address on the other device,
+and copy share links from that address too (links copied on `localhost` only work on your computer). If
+Windows asks, allow Node.js on **private networks**.
+
+```
+phone ──Wi-Fi──► your computer :5173 (Vite: the app)
+                       │  forwards /api and /collab
+                       ▼
+                 niro server :1234 (accounts, boards, live editing)
+```
+
+## Configuration
+
+| Variable | Where | What it does |
+| --- | --- | --- |
+| `VITE_COLLAB_URL` | `.env.local` | Live connection address. `off` disables it; default is `/collab` on the page's own address |
+| `PORT` | when starting the server | Server port (default `1234`; update `vite.config.ts` if you change it) |
+| `NIRO_HOSTS` | when starting the server | Extra host names allowed to sign in, comma separated (e.g. `my-pc.local:*`). `localhost` and private network addresses are always allowed |
+| `BETTER_AUTH_SECRET` | when starting the server | Signing secret for sessions. If unset, one is created in `server/data/auth-secret.txt` on first start |
+
+## Keyboard shortcuts
 
 | Key | Action |
 | --- | --- |
@@ -218,7 +229,54 @@ your own network.
 | Alt+P | Present frames as slides |
 | → / Space, ←, Home / End, Esc | Presenting: next, previous, first / last, close slides grid or exit |
 
-## Code map
+On a Mac, use Cmd instead of Ctrl and Option instead of Alt.
+
+## How it works
+
+```
+ React UI ──► Zustand store ──(bridge)──► Yjs document ──► IndexedDB (this browser)
+                   ▲                          │
+                   └──────── changes ◄────────┤── other tabs (BroadcastChannel)
+                                              └── niro server (Hocuspocus over WebSocket)
+                                                    ├── board files  server/data/<id>.ydoc
+                                                    └── SQLite        accounts, boards, sharing
+```
+
+- **Rendering**: items are DOM elements in one "world" layer moved by a single CSS `translate() scale()`;
+  connectors are SVG. Handles, toolbars and guides are drawn in screen space so they keep their size at any
+  zoom. Only items near the screen are rendered.
+- **State**: one Zustand store. A bridge (`src/collab/bridge.ts`) compares store changes by reference and
+  writes only what changed into a **Yjs** document; changes from other tabs or people come back the same way.
+  Each item is its own shared map, so a move and a recolor made at the same moment both survive.
+- **Undo**: a Yjs `UndoManager` that records only your own changes.
+- **Server**: one Node process. [Hocuspocus](https://tiptap.dev/docs/hocuspocus) syncs the Yjs documents and
+  presence; [Better Auth](https://better-auth.com) handles accounts; board ownership, members and link
+  access live in SQLite (`node:sqlite`). Every live connection is checked against your role, and viewers get
+  a read-only connection.
+
+## Project structure
+
+```
+niro/
+├── public/                 logo, favicon, touch icon
+├── server/                 the optional niro server (npm run server)
+│   ├── index.mjs           live boards (Hocuspocus) + web API, one port
+│   ├── auth.mjs            accounts and guests (Better Auth)
+│   ├── boards.mjs          boards, members, link / guest access, /api/boards
+│   └── me.mjs              your settings (color), /api/me
+├── src/
+│   ├── collab/             Yjs document, store bridge, undo, tab sync, server connection, presence
+│   ├── components/         canvas, items, toolbars, dialogs, presenter, presence UI
+│   ├── store.ts            board state and actions
+│   ├── boards.ts           boards list, saving, accounts' boards, links
+│   ├── account.ts          sign up / in / out, guests, settings
+│   └── *.ts                pure logic: geometry, connectors, snapping, frames, culling, pen, export…
+├── index.html              loading screen
+└── vite.config.ts          dev server; forwards /api and /collab to the niro server
+```
+
+<details>
+<summary><strong>Full code map</strong></summary>
 
 - `src/store.ts`: board state, actions, history, persistence subscription
 - `src/geometry.ts`: camera math (screen and world coordinates), hit-testing, resize
@@ -230,49 +288,94 @@ your own network.
 - `src/pen.ts`: pen and highlighter colors and widths, stroke smoothing, simplification, normalized storage, partial erasing
 - `src/shortcuts.ts`: shortcut list for the shortcuts panel, toolbar tooltips and tool keys
 - `src/boardFile.ts`: JSON file format, validation, and remapping for import
-- `public/`: `logo.png` (original), `logo-mark.png` (the mark, square, transparent), `logo-full.png`
-  (mark + wordmark, trimmed), `favicon.png` (64 px), `apple-touch-icon.png` (180 px)
-- `src/boards.ts`: boards list, startup loading and migration, autosave, switch / new / rename / duplicate / delete
+- `public/`: `logo.png` (original), `logo-mark.png` (the mark, square, transparent), `logo-full.png` (mark + wordmark, trimmed), `favicon.png` (64 px), `apple-touch-icon.png` (180 px)
+- `src/boards.ts`: boards list, startup loading and migration, autosave, switch / new / rename / duplicate / delete, account boards, links
 - `src/kv.ts`: key-value storage on IndexedDB with a localStorage fallback
 - `src/persistence.ts`: board data shape, sanitizing loaded data, reading the pre-boards save
-- `src/collab/boardDoc.ts`: a board as a Yjs document (layout, filling it from an older save, reading it, storing it)
-- `src/collab/bridge.ts`: keeps the store and the open board's Yjs document in step, both ways; undo (`bindHistory`)
-- `src/collab/tabSync.ts`: keeps the open board in step with other tabs of the browser (BroadcastChannel)
-- `src/collab/connection.ts`: connection to the collaboration server (Hocuspocus provider), presence (`usePresence`: status, peers, you)
-- `src/collab/user.ts`: your name and color on shared boards (random at first, remembered)
-- `src/components/Presence.tsx`: live cursors, others' selections and typing, follow frame and pill, people bar (status, avatars, Bring everyone, Share)
-- `server/index.mjs`: niro server (`npm run server`): live boards (Hocuspocus, saved to `server/data/<id>.ydoc`) and the web API (`/api`), SQLite database `server/data/niro.sqlite`
-- `server/auth.mjs`: accounts (Better Auth: email + password, sessions, allowed hosts, secret)
-- `server/boards.mjs`: boards, members and link access in SQLite, roles, the `/api/boards` API
-- `server/me.mjs`: your settings kept with the account (color), `/api/me`
-- `src/account.ts`: your account on the page (`useAccount`, sign up / in / out, change name, tabs in step)
-- `src/api.ts`: calls to the boards API (`boardsApi`)
-- `src/components/ShareDialog.tsx`: Share dialog (link access, invite, members)
-- `src/components/Account.tsx`: Sign in button / account menu, sign-in and create-account dialog, account settings (name, color, password)
 - `src/zorder.ts`: z-order as numbers on items (`sortByZ`, `assignZ` renumbers only the items that moved)
+- `src/collab/boardDoc.ts`: a board as a Yjs document (layout, filling it from an older save, reading it, storing it)
+- `src/collab/bridge.ts`: keeps the store and the open board's Yjs document in step, both ways; undo (`bindHistory`); automatic fixes
+- `src/collab/tabSync.ts`: keeps the open board in step with other tabs of the browser (BroadcastChannel)
+- `src/collab/connection.ts`: connection to the server (Hocuspocus provider), presence (`usePresence`), follow, Bring everyone
+- `src/collab/user.ts`: your name and color on shared boards
+- `src/account.ts`: your account on the page (`useAccount`, sign up / in / out, guests, settings, tabs in step)
+- `src/api.ts`: calls to the server API (`boardsApi`, `meApi`)
 - `src/exportImage.ts`: board content to SVG (both text modes), what an export area contains
 - `src/exportActions.ts`: text measuring, SVG → PNG, downloads
 - `src/textStyle.ts`: text options (fields, defaults, sizes, colors) shared by the board and export
 - `src/richText.ts`: rich text runs (pure helpers); `src/richEditor.ts`: rich text editing in the DOM
-- `src/components/TextOptions.tsx`: text options in the context toolbar
-- `src/components/ExportDialog.tsx`: export image dialog
-- `src/components/RegionPicker.tsx`: adjustable custom export area window
+- `src/cameraGlide.ts`: animated camera moves (`glideTo`, `glideToBox`)
 - `src/components/Canvas.tsx`: viewport, pointer gestures (pan, move, resize, marquee, create), wheel
 - `src/components/ItemView.tsx`: item rendering and inline text editor
 - `src/components/SelectionOverlay.tsx`, `ContextToolbar.tsx`, `Toolbar.tsx`, `ZoomControls.tsx`, `ShortcutsHelp.tsx`: UI chrome
-- `src/components/Presenter.tsx`: Present button, presentation mode (dim mask, slide controls, full screen) and slides grid
-- `src/components/FrameOptions.tsx`: Frame tool formats flyout (presets and Slides)
-- `src/components/DeckControls.tsx`: slide deck bar (Play, Focus, + Slide) and the + after the last slide
+- `src/components/TextOptions.tsx`: text options in the context toolbar
+- `src/components/ExportDialog.tsx`: export image dialog; `RegionPicker.tsx`: adjustable custom export area
+- `src/components/Presenter.tsx`: Present button, presentation mode and slides grid
+- `src/components/FrameOptions.tsx`: Frame tool formats flyout; `DeckControls.tsx`: slide deck bar
 - `src/components/FocusMode.tsx`: focus mode (dim mask, banner with previous / next)
-- `src/cameraGlide.ts`: animated camera moves (`glideTo`, `glideToBox`)
+- `src/components/Presence.tsx`: live cursors, others' selections and typing, follow frame and pill, people bar
+- `src/components/Account.tsx`: Sign in button, account menu, sign-in / create-account / guest dialog, account settings
+- `src/components/ShareDialog.tsx`: Share dialog (link access, guests, invite, members)
+- `server/index.mjs`: niro server: live boards (Hocuspocus, `server/data/<id>.ydoc`), web API (`/api`), SQLite `server/data/niro.sqlite`
+- `server/auth.mjs`: accounts and guests (Better Auth: email + password, anonymous plugin, sessions, allowed hosts, secret)
+- `server/boards.mjs`: boards, members, link and guest access, roles, the `/api/boards` API
+- `server/me.mjs`: your settings kept with the account (color), `/api/me`
 
-## Roadmap ideas
+</details>
 
-1. Real-time collaboration (Yjs + a WebSocket server), then accounts. Done: boards stored as Yjs
-   documents, undo with Yjs (only your own changes), tabs kept in sync, server + live cursors and
-   avatars, others' selections and typing, conflict fixes, follow / bring everyone, sign-in, boards
-   with your account, permissions, sharing and view only, account settings, guests. Before going
-   public: HTTPS.
-   Later extra: typing together in one item (letter-by-letter merging)
-2. Level of detail when zoomed far out (simplified items), and a spatial index for 50k+ items
-3. Boards dashboard with thumbnails, and pasted images (stored in IndexedDB)
+## Scripts
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Start the app at http://localhost:5173 (add `-- --host` for other devices) |
+| `npm run server` | Start the niro server (collaboration, accounts, sharing) on port 1234 |
+| `npm run typecheck` | Type-check the app (the only automated check) |
+| `npm run build` | Type-check and build the app into `dist/` |
+| `npm run preview` | Serve the built app (also forwards to the niro server) |
+
+## Where your data lives
+
+| Data | Location |
+| --- | --- |
+| Boards you use in a browser | That browser's IndexedDB (each browser and device has its own copy) |
+| Boards kept with an account | `server/data/<board id>.ydoc` on the computer running the server |
+| Accounts, sessions, boards, members, settings | `server/data/niro.sqlite` (passwords only as secure hashes) |
+| Session signing secret | `server/data/auth-secret.txt` (or `BETTER_AUTH_SECRET`); keep it private |
+
+`server/data/` is git-ignored. Back it up to keep shared boards and accounts.
+
+## Roadmap
+
+- [x] Infinite canvas, items, connectors, drawing, frames, slide decks and presenting
+- [x] Rich text, image and JSON export / import, multiple boards
+- [x] Real-time collaboration: Yjs, server, presence, follow, conflict fixes
+- [x] Accounts, boards with your account, sharing, view only, guests, account settings
+- [ ] HTTPS and a production setup, before putting niro on the internet
+- [ ] Level of detail when zoomed far out, and a spatial index for 50k+ items
+- [ ] Boards dashboard with thumbnails, and pasted images
+- [ ] Typing together in one item (letter-by-letter merging)
+
+## Contributing
+
+Issues and pull requests are welcome.
+
+1. Fork the repository and create a branch for your change.
+2. Run `npm install`, then `npm run dev` (and `npm run server` for collaboration features).
+3. Keep TypeScript strict and run `npm run typecheck` before opening a pull request.
+4. Describe what you changed and how to try it.
+
+Before changing something, read [How it works](#how-it-works): world vs screen coordinates, the
+store-to-Yjs bridge (keep store updates immutable, never call Yjs from actions) and undo steps
+(`checkpoint()` before an undoable change) matter in most of the code.
+
+## License
+
+niro is released under the [MIT License](LICENSE): you may use, copy, change and share it, including
+in commercial projects, as long as the copyright notice and license text stay with it.
+
+## Acknowledgements
+
+Built with [React](https://react.dev), [TypeScript](https://www.typescriptlang.org), [Vite](https://vite.dev),
+[Zustand](https://zustand.docs.pmnd.rs), [Yjs](https://yjs.dev), [Hocuspocus](https://tiptap.dev/docs/hocuspocus)
+and [Better Auth](https://better-auth.com). Inspired by [Miro](https://miro.com); niro is an independent
+project and not affiliated with Miro.
