@@ -6,8 +6,9 @@ import { renameMe } from './collab/connection';
  * Your niro account: sign up, sign in, sign out, change your name. The niro server
  * (server/auth.mjs, Better Auth) keeps accounts; the page reaches it on its own
  * address at /api/auth (the Vite dev server forwards it), and the session is an
- * httpOnly cookie the page never sees. Without the server niro works as before,
- * signed out.
+ * httpOnly cookie the page never sees. A browser has one sign-in for all its tabs,
+ * so tabs tell each other when it changes (BroadcastChannel `niro:account`).
+ * Without the server niro works as before.
  */
 export const authClient = createAuthClient();
 
@@ -17,7 +18,11 @@ export interface Account {
   email: string;
 }
 
-export type AccountStatus = 'loading' | 'signed-out' | 'signed-in';
+/**
+ * `offline`: the server couldn't be reached, so it's unknown who is signed in;
+ * boards already in this browser keep working and nothing is signed out.
+ */
+export type AccountStatus = 'loading' | 'signed-out' | 'signed-in' | 'offline';
 
 interface AccountState {
   status: AccountStatus;
@@ -30,7 +35,12 @@ export const useAccount = create<AccountState>(() => ({ status: 'loading', user:
 
 export const openAccountDialog = (dialog: AccountState['dialog']) => useAccount.setState({ dialog });
 
-const UNREACHABLE = 'Can’t reach the niro server. Is it running (npm run server)?';
+export const UNREACHABLE = 'Can’t reach the niro server. Is it running (npm run server)?';
+
+const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('niro:account');
+/** Tell the other tabs the sign-in changed; they ask the server again. */
+const announce = () => channel?.postMessage('changed');
+if (channel) channel.onmessage = () => void loadSession();
 
 /** A readable message from a Better Auth error (or a failed request). */
 function message(error: { message?: string; status?: number } | null | undefined, fallback: string): string {
@@ -45,14 +55,15 @@ function signedIn(user: { id: string; name: string; email: string }) {
   renameMe(user.name);
 }
 
-/** Ask the server who is signed in (on start). Signed out when it can't be reached. */
+/** Ask the server who is signed in (on start, and when another tab signs in or out). */
 export async function loadSession(): Promise<void> {
   try {
-    const { data } = await authClient.getSession();
+    const { data, error } = await authClient.getSession();
+    if (error && (!error.status || error.status >= 500)) return void useAccount.setState({ status: 'offline' });
     if (data?.user) signedIn(data.user);
     else useAccount.setState({ status: 'signed-out', user: null });
   } catch {
-    useAccount.setState({ status: 'signed-out', user: null });
+    useAccount.setState({ status: 'offline' });
   }
 }
 
@@ -62,6 +73,7 @@ export async function signUp(name: string, email: string, password: string): Pro
     const { data, error } = await authClient.signUp.email({ name: name.trim(), email: email.trim(), password });
     if (error || !data?.user) return message(error, 'Could not create the account.');
     signedIn(data.user);
+    announce();
     return null;
   } catch {
     return UNREACHABLE;
@@ -74,6 +86,7 @@ export async function signIn(email: string, password: string): Promise<string | 
     const { data, error } = await authClient.signIn.email({ email: email.trim(), password });
     if (error || !data?.user) return message(error, 'Wrong email or password.');
     signedIn(data.user);
+    announce();
     return null;
   } catch {
     return UNREACHABLE;
@@ -85,6 +98,7 @@ export async function signOut(): Promise<void> {
     await authClient.signOut();
   } finally {
     useAccount.setState({ status: 'signed-out', user: null });
+    announce();
   }
 }
 
@@ -98,6 +112,7 @@ export async function changeName(name: string): Promise<string | null> {
       const { error } = await authClient.updateUser({ name: clean });
       if (error) return message(error, 'Could not change your name.');
       useAccount.setState({ user: { ...user, name: clean } });
+      announce();
     } catch {
       return UNREACHABLE;
     }

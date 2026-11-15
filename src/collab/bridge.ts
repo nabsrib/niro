@@ -59,9 +59,25 @@ export function bindBoard(bd: BoardDoc): () => void {
   let deckTimer: number | undefined;
   let stopped = false;
 
+  let warnedAt = 0;
   const unsubscribe = useBoard.subscribe((s) => {
     if (applying) return;
     if (s.items === last.items && s.order === last.order && s.connectors === last.connectors) return;
+    if (s.readOnly) {
+      // View only: put the content back, so nothing is saved or sent (the server
+      // would refuse it anyway), and say why now and then.
+      applying = true;
+      try {
+        useBoard.setState({ items: last.items, order: last.order, connectors: last.connectors });
+      } finally {
+        applying = false;
+      }
+      if (Date.now() - warnedAt > 4000) {
+        warnedAt = Date.now();
+        s.showNotice('This board is view only.');
+      }
+      return;
+    }
     const next = pick(s);
     const prev = last;
     last = next;
@@ -70,7 +86,7 @@ export function bindBoard(bd: BoardDoc): () => void {
 
   /** Give dangling connectors free ends (or remove them), as one shared fix. */
   const repairConnectors = () => {
-    if (stopped) return;
+    if (stopped || useBoard.getState().readOnly) return;
     const known: Record<string, Item> = { ...Object.fromEntries(gone), ...last.items };
     const fixed: Record<string, Connector> = {};
     const remove: string[] = [];
@@ -97,7 +113,7 @@ export function bindBoard(bd: BoardDoc): () => void {
   const scheduleDeckFix = () => {
     window.clearTimeout(deckTimer);
     deckTimer = window.setTimeout(() => {
-      if (stopped) return;
+      if (stopped || useBoard.getState().readOnly) return;
       const busy = useBoard.getState().interacting || usePresence.getState().peers.some((p) => p.busy);
       if (busy) return scheduleDeckFix();
       asFix(() => useBoard.getState().layoutDecks());

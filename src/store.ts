@@ -105,6 +105,11 @@ export interface BoardState {
   canUndo: boolean;
   canRedo: boolean;
   clipboard: Clip;
+  /**
+   * View only (you are a viewer on this board): only the select and hand tools,
+   * no text editing; any other change is undone by the bridge (collab/bridge.ts).
+   */
+  readOnly: boolean;
 
   setTool(tool: Tool): void;
   setCamera(camera: Camera): void;
@@ -277,8 +282,12 @@ export const useBoard = create<BoardState>()((set, get) => ({
   canUndo: false,
   canRedo: false,
   clipboard: { items: [], connectors: [] },
+  readOnly: false,
 
-  setTool: (tool) => set({ tool, editingId: null, connectHint: null }),
+  setTool: (tool) => {
+    if (get().readOnly && tool !== 'select' && tool !== 'hand') return;
+    set({ tool, editingId: null, connectHint: null });
+  },
   setCamera: (camera) => set({ camera }),
   panBy: (dx, dy) =>
     set((s) => ({ camera: { ...s.camera, x: s.camera.x + dx, y: s.camera.y + dy } })),
@@ -679,6 +688,7 @@ export const useBoard = create<BoardState>()((set, get) => ({
   selectAll: () =>
     set((s) => ({ selected: [...s.order, ...Object.keys(s.connectors)], editingId: null })),
   startEditing: (id) => {
+    if (get().readOnly) return;
     // A connector's text is its label.
     if (get().connectors[id]) {
       set({ editingId: id, selected: [id], tool: 'select' });

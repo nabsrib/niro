@@ -33,6 +33,7 @@ export function SelectionOverlay() {
   const connectors = useBoard((s) => s.connectors);
   const order = useBoard((s) => s.order);
   const camera = useBoard((s) => s.camera);
+  const readOnly = useBoard((s) => s.readOnly);
   const editingId = useBoard((s) => s.editingId);
   const interacting = useBoard((s) => s.interacting);
   const hint = useBoard((s) => s.connectHint);
@@ -198,7 +199,8 @@ export function SelectionOverlay() {
         );
       })}
 
-      {allBounds && idle && <ContextToolbar box={toScreen(allBounds, camera)} ids={selected} />}
+      {/* View only: no styling toolbar (nothing can change). */}
+      {allBounds && idle && !readOnly && <ContextToolbar box={toScreen(allBounds, camera)} ids={selected} />}
       {/* While typing in a sticky, shape or text: the text options stay available. */}
       {allBounds && !interacting && editingText && (
         <ContextToolbar box={toScreen(allBounds, camera)} ids={selected} editing />

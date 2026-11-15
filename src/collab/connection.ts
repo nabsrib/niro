@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { HocuspocusProvider } from '@hocuspocus/provider';
+import type * as Y from 'yjs';
 import type { Awareness } from 'y-protocols/awareness';
 import { useBoard, type BoardState } from '../store';
 import { boundsOf, screenToWorld } from '../geometry';
@@ -21,7 +22,15 @@ import { getUser, setUser, type LocalUser } from './user';
  * by default /collab on the page's own address (forwarded to the server by Vite).
  */
 
-export type ConnectionStatus = 'off' | 'connecting' | 'online' | 'offline';
+/** `denied`: the server refused this board (signed out, no access, deleted); see `deniedReason`. */
+export type ConnectionStatus = 'off' | 'connecting' | 'online' | 'offline' | 'denied';
+
+/** What the page tells you when the server refuses a board (reasons from server/index.mjs). */
+export const DENIED_MESSAGE: Record<string, string> = {
+  'signed-out': 'Sign in to keep this board in sync.',
+  'no-access': 'You don’t have access to this board any more. Your copy here is kept, but it no longer syncs.',
+  'not-found': 'This board is no longer on the server (it may have been deleted).',
+};
 
 /** A person's view: the world point at the center of their screen, and their zoom. */
 export interface View {
@@ -58,6 +67,7 @@ export interface Peer extends PresenceState {
 
 interface Presence {
   status: ConnectionStatus;
+  deniedReason: string | null;
   peers: Peer[];
   me: LocalUser;
   /** The person whose view this one follows. */
@@ -68,6 +78,7 @@ interface Presence {
 
 export const usePresence = create<Presence>(() => ({
   status: 'off',
+  deniedReason: null,
   peers: [],
   me: getUser(),
   following: null,
@@ -161,12 +172,24 @@ export function connectBoard(boardId: string, bd: BoardDoc): () => void {
     usePresence.setState({ status: 'off', peers: [], following: null, leading: false });
     return () => {};
   }
-  usePresence.setState({ status: 'connecting', peers: [], following: null, leading: false });
+  usePresence.setState({ status: 'connecting', deniedReason: null, peers: [], following: null, leading: false });
   const provider = new HocuspocusProvider({
     url,
     name: boardId,
     document: bd.doc,
-    onStatus: ({ status }) => usePresence.setState({ status: STATUS[String(status)] ?? 'offline' }),
+    onStatus: ({ status }) => {
+      // A refused board stays "denied" until it is opened again.
+      if (usePresence.getState().status !== 'denied') usePresence.setState({ status: STATUS[String(status)] ?? 'offline' });
+    },
+    // The server's word on what you may do: viewers get a read-only connection.
+    onAuthenticated: ({ scope }) => {
+      usePresence.setState({ status: 'online', deniedReason: null });
+      useBoard.setState(scope === 'readonly' ? { readOnly: true, tool: 'select', editingId: null } : { readOnly: false });
+    },
+    onAuthenticationFailed: ({ reason }) => {
+      usePresence.setState({ status: 'denied', deniedReason: reason, peers: [] });
+      useBoard.getState().showNotice(DENIED_MESSAGE[reason] ?? `The server refused this board (${reason}).`, 'error');
+    },
   });
   const awareness = provider.awareness!;
   const s0 = useBoard.getState();
@@ -277,8 +300,45 @@ export function connectBoard(boardId: string, bd: BoardDoc): () => void {
     awareness.off('change', onChange);
     provider.destroy();
     followByLead = false;
-    usePresence.setState({ status: 'off', peers: [], following: null, leading: false });
+    usePresence.setState({ status: 'off', deniedReason: null, peers: [], following: null, leading: false });
   };
+}
+
+/** The open board has no server connection (a board kept only in this browser). */
+export function noConnection() {
+  usePresence.setState({ status: 'off', deniedReason: null, peers: [], following: null, leading: false });
+}
+
+/**
+ * Send a board that isn't open to the server (moving boards from this browser
+ * into an account). Resolves true once the server has all of it, false if it was
+ * refused or took longer than `timeoutMs`.
+ */
+export function uploadBoard(boardId: string, doc: Y.Doc, timeoutMs = 15_000): Promise<boolean> {
+  const url = collabUrl();
+  if (!url) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (ok: boolean) => {
+      if (done) return;
+      done = true;
+      window.clearInterval(poll);
+      window.clearTimeout(timeout);
+      provider.destroy();
+      resolve(ok);
+    };
+    const provider = new HocuspocusProvider({
+      url,
+      name: boardId,
+      document: doc,
+      onAuthenticationFailed: () => finish(false),
+    });
+    // Synced (the server answered) and nothing left unacknowledged = uploaded.
+    const poll = window.setInterval(() => {
+      if (provider.synced && !provider.hasUnsyncedChanges) finish(true);
+    }, 150);
+    const timeout = window.setTimeout(() => finish(false), timeoutMs);
+  });
 }
 
 // ---------- publishing presence (at most every 50 ms) ----------

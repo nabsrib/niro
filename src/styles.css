@@ -987,8 +987,11 @@ button {
 
 .conn--online i { background: #2fa84f; }
 .conn--connecting i { background: #f2b01c; animation: conn-pulse 1s ease-in-out infinite alternate; }
-.conn--offline { color: #c0392b; }
-.conn--offline i { background: #e8416f; }
+.conn--offline,
+.conn--denied { color: #c0392b; }
+.conn--offline i,
+.conn--denied i { background: #e8416f; }
+.people--solo { padding: 0 4px; }
 
 @keyframes conn-pulse {
   to { opacity: 0.3; }
@@ -1121,6 +1124,120 @@ button {
 }
 
 .follow-pill button:hover { background: rgba(255, 255, 255, 0.4); }
+
+/* ---------- share dialog ---------- */
+
+.share { width: min(480px, 100%); }
+
+.share__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 16px 0;
+}
+
+.share__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.share__empty p { margin: 0; line-height: 1.45; }
+
+.share__section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.share__label {
+  flex: none;
+  width: 36px;
+  color: var(--muted);
+}
+
+.share__value { flex: 1; }
+
+.share__select {
+  height: 32px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  font: inherit;
+  font-size: 13px;
+}
+
+.share__section .share__select { flex: 1; min-width: 0; }
+
+.share__help {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.share__invite {
+  display: flex;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.share__invite input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.share__members {
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.share__member {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+
+.share__who {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.share__who strong,
+.share__who span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share__who span { font-size: 12px; color: var(--muted); }
+.share__role { font-size: 12px; color: var(--muted); }
+
+/* "View only" at the top of the toolbar on boards you may only look at. */
+.toolbar__badge {
+  width: 36px;
+  padding: 4px 0 6px;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
+}
 
 /* ---------- account ---------- */
 
@@ -1985,6 +2102,26 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Where a board lives / your role on it, after its name. */
+.board-row__tag {
+  flex: none;
+  max-width: 140px;
+  margin-left: auto;
+  padding: 1px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.board-row__tag--local {
+  background: #f0f0f4;
+  color: var(--muted);
 }
 
 .board-row__rename {

@@ -6,6 +6,7 @@ import { FrameOptions } from './components/FrameOptions';
 import { PresentButton, Presenter } from './components/Presenter';
 import { Cursors, FollowBanner, PeerSelections, PeopleBar } from './components/Presence';
 import { AccountButton, AccountDialog } from './components/Account';
+import { ShareDialog } from './components/ShareDialog';
 import { FocusMode } from './components/FocusMode';
 import { DevStats } from './components/DevStats';
 import { ExportDialog } from './components/ExportDialog';
@@ -51,6 +52,7 @@ export default function App() {
       )}
       <ExportDialog />
       <AccountDialog />
+      <ShareDialog />
       <Notice />
     </div>
   );

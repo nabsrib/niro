@@ -4,6 +4,7 @@ import { screenToWorld, worldToScreen } from '../geometry';
 import { follow, myId, publishCursor, renameMe, setLead, usePresence, type ConnectionStatus, type Peer } from '../collab/connection';
 import { initials } from '../collab/user';
 import { useAccount } from '../account';
+import { openShare } from './ShareDialog';
 import type { Box } from '../types';
 
 /** A cursor that hasn't moved for this long fades out. */
@@ -18,6 +19,7 @@ const STATUS_LABEL: Record<ConnectionStatus, string> = {
   connecting: 'Connecting…',
   online: 'Live',
   offline: 'Offline',
+  denied: 'Not synced',
 };
 
 const STATUS_TITLE: Record<ConnectionStatus, string> = {
@@ -25,6 +27,7 @@ const STATUS_TITLE: Record<ConnectionStatus, string> = {
   connecting: 'Connecting to the collaboration server…',
   online: 'Connected: changes are shared live',
   offline: 'Server not reachable. Your changes are kept here and shared when it is back (npm run server).',
+  denied: 'The server refused this board, so changes stay in this browser.',
 };
 
 /** Screen rectangle of a world box, or null when it is off screen. */
@@ -220,20 +223,6 @@ export function BringEveryoneButton({ className }: { className: string }) {
   );
 }
 
-function shareLink() {
-  const { showNotice } = useBoard.getState();
-  const local = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
-  void navigator.clipboard.writeText(location.href).then(
-    () =>
-      showNotice(
-        local
-          ? 'Link copied. For other devices, open niro with your computer’s network address instead of localhost, then share that link.'
-          : 'Link copied: anyone who can reach this server can open and edit this board.',
-      ),
-    () => showNotice('Could not copy the link; copy it from the address bar.', 'error'),
-  );
-}
-
 /** Click someone's avatar: follow their view (click again to stop). */
 function toggleFollow(p: Peer) {
   if (usePresence.getState().following === p.id) return follow(null);
@@ -243,7 +232,8 @@ function toggleFollow(p: Peer) {
 
 /**
  * Top-right: connection status, who is on the board (click to follow), your own
- * avatar (click to rename), Bring everyone, Share.
+ * avatar (click to rename), Bring everyone, Share. A board only in this browser
+ * (no connection) shows just Share, which offers to move it into your account.
  */
 export function PeopleBar() {
   const status = usePresence((s) => s.status);
@@ -251,7 +241,12 @@ export function PeopleBar() {
   const me = usePresence((s) => s.me);
   const following = usePresence((s) => s.following);
   const signedIn = useAccount((s) => s.user !== null);
-  if (status === 'off') return null;
+  const shareButton = (
+    <button className="people-btn share-btn" title="Share this board" onClick={openShare}>
+      Share
+    </button>
+  );
+  if (status === 'off') return <div className="people people--solo" data-ui>{shareButton}</div>;
   const shown = peers.slice(0, MAX_AVATARS);
   const mine = myId();
   const avatarTitle = (p: Peer) => {
@@ -296,9 +291,7 @@ export function PeopleBar() {
         </button>
       )}
       {peers.length > 0 && <BringEveryoneButton className="people-btn" />}
-      <button className="people-btn share-btn" title="Copy a link to this board" onClick={shareLink}>
-        Share
-      </button>
+      {shareButton}
     </div>
   );
 }

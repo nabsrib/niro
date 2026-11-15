@@ -67,12 +67,27 @@ export interface Item extends Box {
   deck?: boolean;
 }
 
-/** A board in the boards list (its content is stored separately, under its id). */
+/** What someone may do on a board kept with an account. */
+export type Role = 'owner' | 'editor' | 'viewer';
+/** Who else may open a board with its link: nobody, viewers, or editors (signed in). */
+export type LinkAccess = 'none' | 'view' | 'edit';
+
+/**
+ * A board in the boards list (its content is stored separately, under its id).
+ * Boards kept with an account (on the server) have `role` and `account`; boards
+ * without them are only in this browser.
+ */
 export interface BoardMeta {
   id: string;
   name: string;
   createdAt: number;
   updatedAt: number;
+  /** Your role on it (server boards only). */
+  role?: Role;
+  /** Id of the account this board came with (server boards only). */
+  account?: string;
+  linkAccess?: LinkAccess;
+  ownerName?: string;
 }
 
 export type Side = 'top' | 'right' | 'bottom' | 'left';

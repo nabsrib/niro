@@ -26,8 +26,9 @@ The app reaches the server through the Vite dev server (`/api` and `/collab` are
 server, niro works as before, signed out (the top bar shows "Offline"). To turn the live connection
 off, put `VITE_COLLAB_URL=off` in `.env.local` (or point it at another server). Signing in works on
 `localhost` and private network addresses (192.168.x.x, 10.x.x.x, 172.x.x.x); add other host names
-with `NIRO_HOSTS` when starting the server. Boards are not yet protected by accounts: anyone who can
-reach the server can edit a board whose link they have, so keep it on your own network.
+with `NIRO_HOSTS` when starting the server. Live boards need a signed-in account with access to the
+board (owner, member, or link access). The server speaks plain http (no HTTPS yet), so keep it on
+your own network.
 
 ## Stack
 
@@ -138,7 +139,22 @@ reach the server can edit a board whose link they have, so keep it on your own n
 - Accounts (with `npm run server`): "Sign in" top-right opens a dialog to sign in or create an
   account (name, email, password of 8+ characters, stored only as a secure hash). Signed in, your
   avatar there opens a menu with your name and email, Change name and Sign out; others on a board
-  see your account name. Signed out, everything works as before
+  see your account name. All tabs of a browser share one sign-in and switch together
+- Boards with your account: signed in, the boards menu lists your account's boards (yours, and
+  ones shared with you, tagged "Yours", "Can edit · Owner" or "Can view · Owner") plus boards still
+  only in this browser ("This browser"). New boards and copies go into your account. Right after
+  signing in, niro offers to move this browser's boards into your account (or later: "Move … to my
+  account" in the menu). Signing out removes your account's boards from the browser (they stay on
+  the server). Signed out, boards are only in the browser and don't sync
+- Sharing (Share, top-right): the owner picks who may open the board with its link (only invited
+  people, anyone with the link can view, or can edit; always signed in), invites people by the
+  email of their niro account as editor or viewer, changes roles and removes people. Everyone sees
+  the member list. Removing a board shared with you takes it out of your list; the owner's Delete
+  removes it for everyone. A link to a board you may open adds it to your list; otherwise niro
+  says why (sign in, no access, deleted)
+- View only: on a board where you can only view, the toolbar shows "View only" with just the
+  select and hand tools; you can look around, follow, present and export, but nothing changes
+  (the server refuses changes too)
 - Real-time collaboration (with `npm run server`): everyone with the board's link edits it
   together live, changes merge and are saved on the server; offline edits are kept and shared on
   reconnect. Top-right: connection status (Live / Connecting… / Offline), an avatar per person
@@ -218,7 +234,10 @@ reach the server can edit a board whose link they have, so keep it on your own n
 - `src/components/Presence.tsx`: live cursors, others' selections and typing, follow frame and pill, people bar (status, avatars, Bring everyone, Share)
 - `server/index.mjs`: niro server (`npm run server`): live boards (Hocuspocus, saved to `server/data/<id>.ydoc`) and the web API (`/api`), SQLite database `server/data/niro.sqlite`
 - `server/auth.mjs`: accounts (Better Auth: email + password, sessions, allowed hosts, secret)
-- `src/account.ts`: your account on the page (`useAccount`, sign up / in / out, change name)
+- `server/boards.mjs`: boards, members and link access in SQLite, roles, the `/api/boards` API
+- `src/account.ts`: your account on the page (`useAccount`, sign up / in / out, change name, tabs in step)
+- `src/api.ts`: calls to the boards API (`boardsApi`)
+- `src/components/ShareDialog.tsx`: Share dialog (link access, invite, members)
 - `src/components/Account.tsx`: Sign in button / account menu, sign-in and create-account dialog
 - `src/zorder.ts`: z-order as numbers on items (`sortByZ`, `assignZ` renumbers only the items that moved)
 - `src/exportImage.ts`: board content to SVG (both text modes), what an export area contains
@@ -241,8 +260,8 @@ reach the server can edit a board whose link they have, so keep it on your own n
 
 1. Real-time collaboration (Yjs + a WebSocket server), then accounts. Done: boards stored as Yjs
    documents, undo with Yjs (only your own changes), tabs kept in sync, server + live cursors and
-   avatars, others' selections and typing, conflict fixes, follow / bring everyone, sign-in. Next:
-   boards kept with your account, permissions, sharing.
+   avatars, others' selections and typing, conflict fixes, follow / bring everyone, sign-in, boards
+   with your account, permissions, sharing and view only. Next: account polish (settings, color).
    Later extra: typing together in one item (letter-by-letter merging)
 2. Level of detail when zoomed far out (simplified items), and a spatial index for 50k+ items
 3. Boards dashboard with thumbnails, and pasted images (stored in IndexedDB)

@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { exportBoard, pickBoardFile } from '../boardActions';
-import { createBoard, deleteBoard, duplicateBoard, pickNewBoardFile, renameBoard, switchBoard } from '../boards';
+import {
+  createBoard,
+  deleteBoard,
+  duplicateBoard,
+  moveLocalBoards,
+  pickNewBoardFile,
+  refreshBoards,
+  renameBoard,
+  switchBoard,
+} from '../boards';
+import { useAccount } from '../account';
 import { Icons } from './Icons';
 import { useBoard } from '../store';
 import { comboText } from '../shortcuts';
@@ -17,6 +27,12 @@ export function BoardMenu() {
   const boards = useBoard((s) => s.boards);
   const boardId = useBoard((s) => s.boardId);
   const current = boards.find((b) => b.id === boardId);
+  const signedIn = useAccount((s) => s.user !== null);
+
+  // Opening the menu picks up boards shared with you and renames made elsewhere.
+  useEffect(() => {
+    if (open) void refreshBoards();
+  }, [open]);
 
   // Close on outside click or Escape.
   useEffect(() => {
@@ -45,11 +61,14 @@ export function BoardMenu() {
   };
 
   const remove = (b: BoardMeta) => {
-    const msg =
-      `Delete "${b.name}"?\n\nThis removes the board for good and cannot be undone. ` +
-      'Export it as JSON first if you want to keep a copy.';
+    const shared = b.role && b.role !== 'owner';
+    const msg = shared
+      ? `Remove "${b.name}" from your boards?\n\nThe board stays with its owner (${b.ownerName || 'someone else'}); you lose access unless they share it again.`
+      : `Delete "${b.name}"?\n\nThis removes the board for good${b.role ? ', for everyone it is shared with,' : ''} and cannot be undone. ` +
+        'Export it as JSON first if you want to keep a copy.';
     if (window.confirm(msg)) void deleteBoard(b.id);
   };
+  const local = boards.filter((b) => !b.role);
 
   // Newest first, but the open board always on top.
   const sorted = [...boards].sort((a, b) => (a.id === boardId ? -1 : b.id === boardId ? 1 : b.updatedAt - a.updatedAt));
@@ -114,16 +133,24 @@ export function BoardMenu() {
                   >
                     <span className="board-row__check">{b.id === boardId && <Icons.check />}</span>
                     <span className="board-row__name">{b.name}</span>
+                    {signedIn && <span className={`board-row__tag${b.role ? '' : ' board-row__tag--local'}`}>{tagOf(b)}</span>}
                   </button>
                 )}
                 <span className="board-row__actions">
-                  <button className="icon-btn icon-btn--sm" title="Rename" aria-label={`Rename ${b.name}`} onClick={() => setRenaming(b.id)}>
-                    <Icons.pencil />
-                  </button>
+                  {b.role !== 'viewer' && (
+                    <button className="icon-btn icon-btn--sm" title="Rename" aria-label={`Rename ${b.name}`} onClick={() => setRenaming(b.id)}>
+                      <Icons.pencil />
+                    </button>
+                  )}
                   <button className="icon-btn icon-btn--sm" title="Duplicate" aria-label={`Duplicate ${b.name}`} onClick={run(() => void duplicateBoard(b.id))}>
                     <Icons.copy />
                   </button>
-                  <button className="icon-btn icon-btn--sm" title="Delete" aria-label={`Delete ${b.name}`} onClick={run(() => remove(b))}>
+                  <button
+                    className="icon-btn icon-btn--sm"
+                    title={b.role && b.role !== 'owner' ? 'Remove from my boards' : 'Delete'}
+                    aria-label={`${b.role && b.role !== 'owner' ? 'Remove' : 'Delete'} ${b.name}`}
+                    onClick={run(() => remove(b))}
+                  >
                     <Icons.trash />
                   </button>
                 </span>
@@ -134,6 +161,17 @@ export function BoardMenu() {
             <Icons.plus />
             <span>New board</span>
           </button>
+          {signedIn && local.length > 0 && (
+            <button
+              role="menuitem"
+              className="menu__item"
+              title="Boards marked “This browser” sync and can be shared once they are in your account"
+              onClick={run(() => void moveLocalBoards(local.map((b) => b.id)))}
+            >
+              <Icons.upload />
+              <span>Move {local.length === 1 ? 'the board' : `${local.length} boards`} in this browser to my account</span>
+            </button>
+          )}
           <div className="menu__divider" />
           <button role="menuitem" className="menu__item" onClick={run(exportBoard)}>
             <Icons.download />
@@ -169,6 +207,13 @@ export function BoardMenu() {
       )}
     </div>
   );
+}
+
+/** Small label after a board's name in the list (when signed in). */
+function tagOf(b: BoardMeta): string {
+  if (!b.role) return 'This browser';
+  if (b.role === 'owner') return b.linkAccess && b.linkAccess !== 'none' ? 'Yours · link on' : 'Yours';
+  return `${b.role === 'editor' ? 'Can edit' : 'Can view'} · ${b.ownerName}`;
 }
 
 /** Inline board name editor: Enter or leaving the field saves, Esc cancels (`onDone(null)`). */
