@@ -1122,6 +1122,107 @@ button {
 
 .follow-pill button:hover { background: rgba(255, 255, 255, 0.4); }
 
+/* ---------- account ---------- */
+
+.signin-btn {
+  height: 36px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+
+.signin-btn:hover { background: #f7f7fa; }
+
+.account { position: relative; display: flex; align-items: center; }
+
+.avatar--account {
+  width: 36px;
+  height: 36px;
+  font-size: 13px;
+  box-shadow: var(--shadow);
+}
+
+.account__menu {
+  left: auto;
+  right: 0;
+  min-width: 240px;
+}
+
+.account__who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px 6px;
+  font-size: 14px;
+}
+
+.account__who span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.account-dialog { width: min(360px, 100%); }
+
+.account-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 6px 16px 0;
+}
+
+.account-dialog__body label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+}
+
+.account-dialog__body input {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.account-dialog__body input:focus {
+  outline: 2px solid var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.account-dialog__help {
+  margin: -4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.account-dialog__error {
+  margin: 0;
+  font-size: 12px;
+  color: #b42318;
+}
+
+.account-dialog__footer { justify-content: space-between; }
+
+.link-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.link-btn:hover { text-decoration: underline; }
+
 /* Screen-space layer over the board; never catches the mouse. */
 .cursors {
   position: absolute;

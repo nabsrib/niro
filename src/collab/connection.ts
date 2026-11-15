@@ -18,7 +18,7 @@ import { getUser, setUser, type LocalUser } from './user';
  * them alone) and saves the board. Presence travels as Yjs "awareness": short-lived
  * state per person, never saved, dropped when they leave.
  * Server address: VITE_COLLAB_URL (in .env.local), or "off" for no server;
- * by default port 1234 on the same host as the page.
+ * by default /collab on the page's own address (forwarded to the server by Vite).
  */
 
 export type ConnectionStatus = 'off' | 'connecting' | 'online' | 'offline';
@@ -80,7 +80,8 @@ export function collabUrl(): string | null {
   const env = import.meta.env.VITE_COLLAB_URL as string | undefined;
   if (env === 'off') return null;
   if (env) return env;
-  return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:1234`;
+  // Through the page's own address: the Vite dev server forwards /collab to the niro server.
+  return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/collab`;
 }
 
 const STATUS: Record<string, ConnectionStatus> = {

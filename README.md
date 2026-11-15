@@ -1,29 +1,33 @@
 # niro
 
 A Miro-style infinite whiteboard. Boards are kept in the browser; an optional small server lets
-several people edit the same board live. No accounts yet.
+several people edit the same board live and sign in with an account.
 
 ## Run
 
-Requires Node 22 (pinned in `.node-version`; the app alone runs on 18+, the server needs 22).
+Requires Node 24 (pinned in `.node-version`; the app alone runs on 18+, the server needs 22.5+ for
+its built-in SQLite).
 
 ```bash
 npm install
 npm run dev
 ```
 
-For editing together, start the collaboration server in a second terminal (port 1234; boards are
-saved in `server/data/`):
+For editing together and accounts, start the niro server in a second terminal (port 1234; boards,
+accounts and its secret are kept in `server/data/`, which is git-ignored):
 
 ```bash
 npm run server
 ```
 
-Other devices on your network: run `npm run dev -- --host`, open the "Network" address Vite prints,
-and share that link. Without the server, niro works as before (the top bar shows "Offline").
-To turn the connection off entirely, put `VITE_COLLAB_URL=off` in `.env.local` (or point it at
-another server, e.g. `ws://192.168.1.20:1234`). There are no accounts yet: anyone who can reach the
-server can edit a board whose link they have, so keep it on your own network.
+The app reaches the server through the Vite dev server (`/api` and `/collab` are forwarded to port
+1234), so there is only one address to open. Other devices on your network: run
+`npm run dev -- --host`, open the "Network" address Vite prints, and share that link. Without the
+server, niro works as before, signed out (the top bar shows "Offline"). To turn the live connection
+off, put `VITE_COLLAB_URL=off` in `.env.local` (or point it at another server). Signing in works on
+`localhost` and private network addresses (192.168.x.x, 10.x.x.x, 172.x.x.x); add other host names
+with `NIRO_HOSTS` when starting the server. Boards are not yet protected by accounts: anyone who can
+reach the server can edit a board whose link they have, so keep it on your own network.
 
 ## Stack
 
@@ -131,6 +135,10 @@ server can edit a board whose link they have, so keep it on your own network.
 - Tabs stay in sync: open the same board in two tabs and changes in one show up in the other
   right away, merged, never overwritten (no server needed). The boards list (new, renamed,
   deleted boards) updates in every tab too; each tab keeps its own view, selection and undo
+- Accounts (with `npm run server`): "Sign in" top-right opens a dialog to sign in or create an
+  account (name, email, password of 8+ characters, stored only as a secure hash). Signed in, your
+  avatar there opens a menu with your name and email, Change name and Sign out; others on a board
+  see your account name. Signed out, everything works as before
 - Real-time collaboration (with `npm run server`): everyone with the board's link edits it
   together live, changes merge and are saved on the server; offline edits are kept and shared on
   reconnect. Top-right: connection status (Live / Connecting… / Offline), an avatar per person
@@ -208,7 +216,10 @@ server can edit a board whose link they have, so keep it on your own network.
 - `src/collab/connection.ts`: connection to the collaboration server (Hocuspocus provider), presence (`usePresence`: status, peers, you)
 - `src/collab/user.ts`: your name and color on shared boards (random at first, remembered)
 - `src/components/Presence.tsx`: live cursors, others' selections and typing, follow frame and pill, people bar (status, avatars, Bring everyone, Share)
-- `server/index.mjs`: collaboration server (`npm run server`), saves boards to `server/data/`
+- `server/index.mjs`: niro server (`npm run server`): live boards (Hocuspocus, saved to `server/data/<id>.ydoc`) and the web API (`/api`), SQLite database `server/data/niro.sqlite`
+- `server/auth.mjs`: accounts (Better Auth: email + password, sessions, allowed hosts, secret)
+- `src/account.ts`: your account on the page (`useAccount`, sign up / in / out, change name)
+- `src/components/Account.tsx`: Sign in button / account menu, sign-in and create-account dialog
 - `src/zorder.ts`: z-order as numbers on items (`sortByZ`, `assignZ` renumbers only the items that moved)
 - `src/exportImage.ts`: board content to SVG (both text modes), what an export area contains
 - `src/exportActions.ts`: text measuring, SVG → PNG, downloads
@@ -230,7 +241,8 @@ server can edit a board whose link they have, so keep it on your own network.
 
 1. Real-time collaboration (Yjs + a WebSocket server), then accounts. Done: boards stored as Yjs
    documents, undo with Yjs (only your own changes), tabs kept in sync, server + live cursors and
-   avatars, others' selections and typing, conflict fixes, follow / bring everyone. Next: (optional)
-   typing together in one item, then accounts
+   avatars, others' selections and typing, conflict fixes, follow / bring everyone, sign-in. Next:
+   boards kept with your account, permissions, sharing.
+   Later extra: typing together in one item (letter-by-letter merging)
 2. Level of detail when zoomed far out (simplified items), and a spatial index for 50k+ items
 3. Boards dashboard with thumbnails, and pasted images (stored in IndexedDB)

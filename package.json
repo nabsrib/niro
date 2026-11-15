@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@hocuspocus/provider": "^4.8.0",
+    "better-auth": "^1.7.25",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "y-protocols": "^1.0.6",

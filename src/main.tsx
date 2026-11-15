@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import { initBoards } from './boards';
+import { loadSession } from './account';
 import { useBoard } from './store';
 import './styles.css';
 
@@ -38,6 +39,8 @@ const render = () =>
       <App />
     </StrictMode>,
   );
+// Who is signed in (asks the niro server; signed out when it isn't running).
+void loadSession();
 initBoards().then(
   () => {
     render();

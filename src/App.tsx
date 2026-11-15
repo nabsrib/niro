@@ -5,6 +5,7 @@ import { PenOptions } from './components/PenOptions';
 import { FrameOptions } from './components/FrameOptions';
 import { PresentButton, Presenter } from './components/Presenter';
 import { Cursors, FollowBanner, PeerSelections, PeopleBar } from './components/Presence';
+import { AccountButton, AccountDialog } from './components/Account';
 import { FocusMode } from './components/FocusMode';
 import { DevStats } from './components/DevStats';
 import { ExportDialog } from './components/ExportDialog';
@@ -36,6 +37,7 @@ export default function App() {
           <div className="top-right">
             <PeopleBar />
             <PresentButton />
+            <AccountButton />
           </div>
           <div className="corner-controls">
             <ZoomControls />
@@ -48,6 +50,7 @@ export default function App() {
         </>
       )}
       <ExportDialog />
+      <AccountDialog />
       <Notice />
     </div>
   );

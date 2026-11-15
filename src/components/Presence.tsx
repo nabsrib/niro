@@ -3,6 +3,7 @@ import { useBoard } from '../store';
 import { screenToWorld, worldToScreen } from '../geometry';
 import { follow, myId, publishCursor, renameMe, setLead, usePresence, type ConnectionStatus, type Peer } from '../collab/connection';
 import { initials } from '../collab/user';
+import { useAccount } from '../account';
 import type { Box } from '../types';
 
 /** A cursor that hasn't moved for this long fades out. */
@@ -249,6 +250,7 @@ export function PeopleBar() {
   const peers = usePresence((s) => s.peers);
   const me = usePresence((s) => s.me);
   const following = usePresence((s) => s.following);
+  const signedIn = useAccount((s) => s.user !== null);
   if (status === 'off') return null;
   const shown = peers.slice(0, MAX_AVATARS);
   const mine = myId();
@@ -279,17 +281,20 @@ export function PeopleBar() {
           +{peers.length - shown.length}
         </span>
       )}
-      <button
-        className="avatar avatar--me"
-        style={{ background: me.color }}
-        title={`You: ${me.name} · click to change your name`}
-        onClick={() => {
-          const name = window.prompt('Your name, as others see it:', me.name);
-          if (name !== null) renameMe(name);
-        }}
-      >
-        {initials(me.name)}
-      </button>
+      {/* Signed in, your avatar is the account button next to Present. */}
+      {!signedIn && (
+        <button
+          className="avatar avatar--me"
+          style={{ background: me.color }}
+          title={`You: ${me.name} · click to change your name`}
+          onClick={() => {
+            const name = window.prompt('Your name, as others see it:', me.name);
+            if (name !== null) renameMe(name);
+          }}
+        >
+          {initials(me.name)}
+        </button>
+      )}
       {peers.length > 0 && <BringEveryoneButton className="people-btn" />}
       <button className="people-btn share-btn" title="Copy a link to this board" onClick={shareLink}>
         Share
