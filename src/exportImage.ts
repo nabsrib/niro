@@ -1,8 +1,9 @@
 import type { Box, Connector, Item, RunStyle, TextRun } from './types';
 import { boundsOf, intersects } from './geometry';
-import { LABEL_DEFAULTS, connectorGeometry, pointAlong } from './connectors';
+import { LABEL_DEFAULTS, connectorGeometry, dashArray, pointAlong, type ConnectorGeometry } from './connectors';
 import { isDeck, isFrame, renderOrder, withFrameChildren } from './frames';
 import { pathPoints, smoothPath } from './pen';
+import { borderColor, borderDash, borderWidth, shapeOf, shapePath, textInset } from './shapes';
 import { FLEX_V, FONT_FAMILY, fontCss, textAlign, textColor, textVAlign, type HAlign, type VAlign } from './textStyle';
 
 /**
@@ -37,7 +38,6 @@ export type ExportArea =
 
 const LINE_HEIGHT = 1.3;
 const LABEL_LINE_HEIGHT = 1.35;
-const INK = '#1a1a1a';
 /** Space around the content when exporting the board or a selection. */
 const MARGIN = 40;
 /**
@@ -354,6 +354,38 @@ function renderItem(it: Item, opts: SvgOptions, cropped: boolean, idx: number): 
         : svgText(box, it.text, look, measure, LINE_HEIGHT, it.rich);
 
   switch (it.type) {
+    case 'comment':
+      // Comment pins are notes for people on the board, not part of the picture.
+      return '';
+    case 'emoji': {
+      const size = Math.min(it.w, it.h) * 0.8;
+      return `<text x="${it.x + it.w / 2}" y="${it.y + it.h / 2 + size * 0.35}" font-size="${size}" text-anchor="middle">${esc(it.text)}</text>`;
+    }
+    case 'link': {
+      // Card, title (or the site), and the site in small grey text.
+      let site = it.url ?? '';
+      try {
+        site = new URL(site).hostname.replace(/^www\./, '');
+      } catch {
+        // keep the address as it is
+      }
+      const pad = it.fontSize * 0.8;
+      const titleBox = { x: it.x + pad, y: it.y + pad * 0.8, w: it.w - pad * 2, h: it.h - pad * 2.4 };
+      const look: TextLook = { size: it.fontSize, color: '#1A1A1A', align: 'left', valign: 'top', bold: true };
+      const title = textMode === 'html' ? htmlText(titleBox, it.text || site, look, true) : svgText(titleBox, it.text || site, look, measure);
+      return (
+        `<rect x="${it.x}" y="${it.y}" width="${it.w}" height="${it.h}" rx="${it.fontSize * 0.6}" fill="${it.fill}" stroke="#e3e3e8" stroke-width="${line(1)}"/>` +
+        title +
+        `<text x="${it.x + pad}" y="${it.y + it.h - pad * 0.7}" font-family="${esc(FONT_FAMILY)}" font-size="${it.fontSize * 0.8}" fill="#6b6b76">${esc(site)}</text>`
+      );
+    }
+    case 'image': {
+      // The picture comes in as a data URL (the export loads them first); missing ones show as a grey box.
+      const href = it.src ? opts.images?.[it.src] : undefined;
+      return href
+        ? `<image href="${href}" x="${it.x}" y="${it.y}" width="${it.w}" height="${it.h}" preserveAspectRatio="none"/>`
+        : `<rect x="${it.x}" y="${it.y}" width="${it.w}" height="${it.h}" fill="#ececf0" stroke="#c4c4cc"/>`;
+    }
     case 'frame': {
       const deck = isDeck(it);
       // Title and outline keep their pixel size in the image, like on the board.
@@ -378,15 +410,30 @@ function renderItem(it: Item, opts: SvgOptions, cropped: boolean, idx: number): 
       // Text items: no padding, from the top, height fits the text.
       return text({ x: it.x, y: it.y, w: it.w, h: it.h }, lookOf(it, 'top'), false);
     default: {
-      // Sticky / rect / ellipse: text inside 0.6em padding (+ 2px border on shapes), clipped.
-      const border = it.type === 'sticky' ? 0 : 2;
-      const pad = it.fontSize * 0.6 + border;
-      const inner = { x: it.x + pad, y: it.y + pad, w: it.w - pad * 2, h: it.h - pad * 2 };
+      // Sticky / rect / ellipse: text inside 0.6em padding (+ the border on shapes), clipped.
+      const bw = it.type === 'sticky' ? 0 : borderWidth(it);
+      const kind = shapeOf(it);
+      const ins = textInset(kind);
+      const pad = it.fontSize * 0.6 + bw;
+      const inner = {
+        x: it.x + pad + ins.x * it.w,
+        y: it.y + pad + ins.y * it.h,
+        w: it.w - pad * 2 - ins.x * it.w * 2,
+        h: it.h - pad * 2 - (ins.y + (ins.bottom ?? ins.y)) * it.h,
+      };
+      // Border: color, width (0 = none) and pattern, like the board.
+      const dash = dashArray(borderDash(it), bw);
+      const stroke =
+        bw > 0
+          ? ` stroke="${borderColor(it)}" stroke-width="${line(bw)}"${dash ? ` stroke-dasharray="${dash}"` : ''} stroke-linecap="round" stroke-linejoin="round"`
+          : '';
       let shape: string;
       if (it.type === 'ellipse') {
-        shape = `<ellipse cx="${it.x + it.w / 2}" cy="${it.y + it.h / 2}" rx="${it.w / 2 - 1}" ry="${it.h / 2 - 1}" fill="${it.fill}" stroke="${INK}" stroke-width="${line(2)}"/>`;
+        shape = `<ellipse cx="${it.x + it.w / 2}" cy="${it.y + it.h / 2}" rx="${it.w / 2 - bw / 2}" ry="${it.h / 2 - bw / 2}" fill="${it.fill}"${stroke}/>`;
+      } else if (it.type === 'rect' && kind !== 'rect') {
+        shape = `<path transform="translate(${it.x} ${it.y})" d="${shapePath(kind, it.w, it.h, bw / 2)}" fill="${it.fill}"${stroke}/>`;
       } else if (it.type === 'rect') {
-        shape = `<rect x="${it.x + 1}" y="${it.y + 1}" width="${it.w - 2}" height="${it.h - 2}" rx="2" fill="${it.fill}" stroke="${INK}" stroke-width="${line(2)}"/>`;
+        shape = `<rect x="${it.x + bw / 2}" y="${it.y + bw / 2}" width="${it.w - bw}" height="${it.h - bw}" rx="2" fill="${it.fill}"${stroke}/>`;
       } else {
         shape = `<rect x="${it.x}" y="${it.y}" width="${it.w}" height="${it.h}" fill="${it.fill}" filter="url(#niro-shadow)"/>`;
       }
@@ -399,6 +446,23 @@ function renderItem(it: Item, opts: SvgOptions, cropped: boolean, idx: number): 
       );
     }
   }
+}
+
+/** Line pattern as an SVG attribute (empty for solid lines). */
+function dashAttr(c: Connector, width: number): string {
+  const dash = dashArray(c.dash, width);
+  return dash ? ` stroke-dasharray="${dash}"` : '';
+}
+
+/** The connector's end shapes (filled ones, or drawn as lines). */
+function endShapes(g: ConnectorGeometry, c: Connector, width: number): string {
+  return [g.startHead, g.endHead]
+    .map((h) =>
+      h
+        ? `<path d="${h.d}" fill="${h.fill ? c.stroke : 'none'}" stroke="${c.stroke}" stroke-width="${h.fill ? 1 : width}" stroke-linecap="round" stroke-linejoin="round"/>`
+        : '',
+    )
+    .join('');
 }
 
 function renderConnector(c: Connector, items: ItemMap, opts: SvgOptions, idx: number): string {
@@ -429,14 +493,12 @@ function renderConnector(c: Connector, items: ItemMap, opts: SvgOptions, idx: nu
       opts.textMode === 'html'
         ? htmlText({ x: box.x - size, y: box.y, w: w + size * 2, h }, c.label, labelLook, false)
         : svgText(box, c.label, labelLook, opts.measure, LABEL_LINE_HEIGHT);
-    out += `<path d="${g.d}" fill="none" stroke="${c.stroke}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"${mask}/>`;
-    if (g.startHead) out += `<path d="${g.startHead}" fill="${c.stroke}" stroke="${c.stroke}" stroke-linejoin="round"/>`;
-    if (g.endHead) out += `<path d="${g.endHead}" fill="${c.stroke}" stroke="${c.stroke}" stroke-linejoin="round"/>`;
+    out += `<path d="${g.d}" fill="none" stroke="${c.stroke}" stroke-width="${width}"${dashAttr(c, width)} stroke-linecap="round" stroke-linejoin="round"${mask}/>`;
+    out += endShapes(g, c, width);
     return out + label;
   }
-  out += `<path d="${g.d}" fill="none" stroke="${c.stroke}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"/>`;
-  if (g.startHead) out += `<path d="${g.startHead}" fill="${c.stroke}" stroke="${c.stroke}" stroke-linejoin="round"/>`;
-  if (g.endHead) out += `<path d="${g.endHead}" fill="${c.stroke}" stroke="${c.stroke}" stroke-linejoin="round"/>`;
+  out += `<path d="${g.d}" fill="none" stroke="${c.stroke}" stroke-width="${width}"${dashAttr(c, width)} stroke-linecap="round" stroke-linejoin="round"/>`;
+  out += endShapes(g, c, width);
   return out;
 }
 
@@ -447,6 +509,8 @@ export interface SvgOptions {
   background: string | null;
   /** Image pixels per board unit (SVG files: 1). Keeps titles, outlines and thin lines visible. */
   pxPerUnit: number;
+  /** Pictures of image items, as data URLs by file id (loaded before exporting). */
+  images?: Record<string, string>;
 }
 
 /**

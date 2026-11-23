@@ -209,3 +209,46 @@ export const FRAME_PRESETS: { id: FramePreset; label: string; w: number; h: numb
   { id: 'phone', label: 'Phone', w: 390, h: 844 },
   { id: 'slides', label: 'Slides', w: DECK.slideW, h: DECK.slideH },
 ];
+
+/**
+ * Frames with "clip contents" on: for each item inside them, the CSS
+ * `clip-path: inset(top right bottom left)` (in the item's own units) that cuts
+ * off what sticks out. Nested clipping frames intersect. Empty when no frame clips.
+ */
+export function clipInsets(items: ItemMap, order: string[]): Record<string, string> {
+  const clippers = order.filter((id) => items[id]?.type === 'frame' && items[id]?.clip);
+  if (!clippers.length) return {};
+  const parents = frameParents(items, order);
+  const out: Record<string, string> = {};
+  for (const id of order) {
+    const it = items[id];
+    if (!it) continue;
+    // The intersection of every clipping frame this item sits in.
+    let box: Box | null = null;
+    for (let p = parents.get(id); p; p = parents.get(p)) {
+      const f = items[p];
+      if (!f?.clip) continue;
+      if (!box) box = { x: f.x, y: f.y, w: f.w, h: f.h };
+      else {
+        const x = Math.max(box.x, f.x);
+        const y = Math.max(box.y, f.y);
+        box = { x, y, w: Math.max(0, Math.min(box.x + box.w, f.x + f.w) - x), h: Math.max(0, Math.min(box.y + box.h, f.y + f.h) - y) };
+      }
+    }
+    if (!box) continue;
+    const top = Math.max(0, box.y - it.y);
+    const left = Math.max(0, box.x - it.x);
+    const right = Math.max(0, it.x + it.w - (box.x + box.w));
+    const bottom = Math.max(0, it.y + it.h - (box.y + box.h));
+    if (top || left || right || bottom) out[id] = `inset(${top}px ${right}px ${bottom}px ${left}px)`;
+  }
+  return out;
+}
+
+/** Frames hidden by someone other than `me` (their contents are covered). */
+export function framesHiddenFrom(items: ItemMap, order: string[], me: string): string[] {
+  return order.filter((id) => {
+    const f = items[id];
+    return f?.type === 'frame' && !!f.hiddenBy && f.hiddenBy !== me;
+  });
+}

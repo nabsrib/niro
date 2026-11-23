@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { BoardMeta, Box, Camera, Connector, Endpoint, Item, PenMode, Side, TextRun, Tool, Vec } from './types';
+import type { BoardMeta, Box, Camera, Connector, Endpoint, Item, PenMode, ShapeKind, Side, TextRun, Tool, Vec } from './types';
 import { boundsOf, fitCamera, uid, zoomCameraAt } from './geometry';
 import { ITEM_DEFAULTS } from './defaults';
 import { connectorGeometry, makeConnector, resolveConnector } from './connectors';
@@ -22,7 +22,7 @@ import { prepareForInsert, type BoardContent } from './boardFile';
 import { ERASER_DEFAULT, HIGHLIGHTER_COLORS, HIGHLIGHTER_WIDTHS, PEN_COLORS, PEN_WIDTHS } from './pen';
 
 type Clip = { items: Item[]; connectors: Connector[] };
-type ConnectorPatch = Partial<Pick<Connector, 'style' | 'startArrow' | 'endArrow' | 'strokeWidth' | 'stroke' | 'bend' | 'label' | 'labelAt' | 'labelSize' | 'labelColor'>>;
+type ConnectorPatch = Partial<Pick<Connector, 'style' | 'startArrow' | 'endArrow' | 'strokeWidth' | 'stroke' | 'bend' | 'bends' | 'channel' | 'dash' | 'label' | 'labelAt' | 'labelSize' | 'labelColor'>>;
 
 const PASTE_OFFSET = 24;
 
@@ -84,6 +84,8 @@ export interface BoardState {
   focusId: string | null;
   /** Frame tool preset: size of a clicked frame, or 'slides' to create a slide deck. */
   framePreset: FramePreset;
+  /** Rectangle tool: the shape a new rectangle gets (shapes.ts). */
+  shapeKind: ShapeKind;
   /**
    * While a frame is dragged over a slide deck: where it would be inserted
    * (slide index) and the insertion line to draw, in world coordinates.
@@ -136,6 +138,7 @@ export interface BoardState {
   setOverview(open: boolean): void;
   setFocus(id: string | null): void;
   setFramePreset(preset: FramePreset): void;
+  setShapeKind(kind: ShapeKind): void;
   /** Save a new presentation order (every slide, as listed by `slideList`). Undoable. */
   reorderSlides(ids: string[]): void;
   /** Hide a frame from (or show it in) the presentation. Undoable. */
@@ -146,6 +149,8 @@ export interface BoardState {
   addSlide(deckId: string): string | null;
   /** Re-lay out every slide deck (no history: part of the change that triggered it). */
   layoutDecks(): void;
+  /** Resize a frame to wrap what is inside it (40 units of margin). One undo step; false if it is empty. */
+  fitFrameToContent(id: string): boolean;
   setDeckDrop(drop: BoardState['deckDrop']): void;
   setBoards(boards: BoardMeta[]): void;
   /**
@@ -274,6 +279,7 @@ export const useBoard = create<BoardState>()((set, get) => ({
   presenting: null,
   focusId: null,
   framePreset: 'custom',
+  shapeKind: 'rect',
   deckDrop: null,
   boards: [],
   boardId: null,
@@ -357,6 +363,7 @@ export const useBoard = create<BoardState>()((set, get) => ({
   },
   setFocus: (focusId) => set({ focusId }),
   setFramePreset: (framePreset) => set({ framePreset }),
+  setShapeKind: (shapeKind) => set({ shapeKind }),
   reorderSlides: (ids) => {
     const s = get();
     const decks = new Map<string, string[]>();
@@ -523,6 +530,23 @@ export const useBoard = create<BoardState>()((set, get) => ({
     const carry = { [frameId]: moving.filter((id) => id !== frameId) };
     s.updateItems(layoutDeck(deck, slides, s.items, rest, carry));
   },
+  fitFrameToContent: (id) => {
+    const s = get();
+    const frame = s.items[id];
+    if (!isFrame(frame) || isDeck(frame)) return false;
+    const inside = withFrameChildren([id], s.items, s.order)
+      .filter((x) => x !== id)
+      .map((x) => s.items[x])
+      .filter(Boolean);
+    const b = boundsOf(inside);
+    if (!b) return false;
+    const pad = 40;
+    s.checkpoint();
+    s.updateItems({ [id]: { x: b.x - pad, y: b.y - pad, w: b.w + pad * 2, h: b.h + pad * 2 } });
+    // A slide in a deck changed size: the deck lays out again.
+    get().layoutDecks();
+    return true;
+  },
   layoutDecks: () => {
     const s = get();
     const decks = s.order.map((id) => s.items[id]).filter(isDeck);
@@ -643,6 +667,8 @@ export const useBoard = create<BoardState>()((set, get) => ({
     });
   },
   deleteItems: (ids) => {
+    // Locked items are never deleted (unlock them first).
+    ids = ids.filter((id) => !get().items[id]?.locked);
     if (!ids.length) return;
     get().checkpoint();
     set((s) => {
@@ -686,7 +712,11 @@ export const useBoard = create<BoardState>()((set, get) => ({
     }),
   setSelected: (selected) => set({ selected }),
   selectAll: () =>
-    set((s) => ({ selected: [...s.order, ...Object.keys(s.connectors)], editingId: null })),
+    set((s) => ({
+      // Comment pins aren't part of a selection.
+      selected: [...s.order.filter((id) => s.items[id]?.type !== 'comment'), ...Object.keys(s.connectors)],
+      editingId: null,
+    })),
   startEditing: (id) => {
     if (get().readOnly) return;
     // A connector's text is its label.
@@ -694,8 +724,9 @@ export const useBoard = create<BoardState>()((set, get) => ({
       set({ editingId: id, selected: [id], tool: 'select' });
       return;
     }
-    // Pen strokes have no text to edit.
-    if (!get().items[id] || get().items[id].type === 'path') return;
+    // Pen strokes and images have no text to edit.
+    const it = get().items[id];
+    if (!it || it.locked || it.type === 'path' || it.type === 'image' || it.type === 'emoji' || it.type === 'comment') return;
     set({ editingId: id, selected: [id], tool: 'select' });
   },
   finishEditing: (id, text, rich) => {
@@ -756,11 +787,13 @@ export const useBoard = create<BoardState>()((set, get) => ({
       return { order: where === 'front' ? [...rest, ...picked] : [...picked, ...rest] };
     });
   },
-  nudge: (sel, dx, dy) => {
-    if (!sel.length) return;
+  nudge: (selection, dx, dy) => {
     const s = get();
+    // Locked items stay put (a locked frame doesn't carry its contents).
+    const sel = selection.filter((id) => !s.items[id]?.locked);
+    if (!sel.length) return;
     // Frames carry their contents along.
-    const ids = withFrameChildren(sel, s.items, s.order);
+    const ids = withFrameChildren(sel, s.items, s.order).filter((id) => !s.items[id]?.locked);
     s.checkpoint();
     const patches: Record<string, Partial<Item>> = {};
     for (const id of ids) {

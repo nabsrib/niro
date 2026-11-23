@@ -16,6 +16,7 @@ import {
 } from '../geometry';
 import {
   bendFromPoint,
+  bendsOf,
   connectorGeometry,
   endpointAt,
   endpointItem,
@@ -24,12 +25,16 @@ import {
   resolveConnector,
 } from '../connectors';
 import { ITEM_DEFAULTS, makeItem } from '../defaults';
-import { FRAME_PRESETS, deckInsertion, deckSlides, isDeck, isFrame, renderOrder, withFrameChildren } from '../frames';
-import { SNAP_DISTANCE, alignmentGuides, snapMove, snapValue } from '../snapping';
+import { FRAME_PRESETS, clipInsets, deckInsertion, deckSlides, framesHiddenFrom, isDeck, isFrame, renderOrder, withFrameChildren } from '../frames';
+import { useMyIdentity } from '../identity';
+import { SNAP_DISTANCE, alignmentGuides, snapMove, snapPoint, snapValue } from '../snapping';
 import type { BoardState } from '../store';
 import { ItemView } from './ItemView';
 import { commitActiveEdit } from '../editing';
 import { importBoardFile } from '../boardActions';
+import { addImageFiles } from '../images';
+import { SHAPE_SIZES } from '../shapes';
+import { startComment } from './Comments';
 import { eraseStroke, makePathItem, simplify, smoothPath } from '../pen';
 import { ConnectorLayer } from './ConnectorLayer';
 import { cullRect, keepRendered, visibleItems } from '../culling';
@@ -82,8 +87,10 @@ type Gesture =
     }
   /** Dragging one end of an existing connector. */
   | { kind: 'reconnect'; id: string; end: 'from' | 'to'; moved: boolean }
-  /** Dragging the middle handle of a curved connector to reshape it. */
-  | { kind: 'bend'; id: string; moved: boolean }
+  /** Dragging one bend point of a straight or curved connector (`index` in its bends). */
+  | { kind: 'bend'; id: string; index: number; moved: boolean }
+  /** Dragging the middle segment of an elbow connector sideways. */
+  | { kind: 'channel'; id: string; axis: 'x' | 'y'; moved: boolean }
   /** Dragging a connector's label along its line. */
   | { kind: 'label'; id: string; startScreen: Vec; moved: boolean }
   /** Freehand pen stroke; points are in world coordinates. */
@@ -103,7 +110,7 @@ function eraseTo(g: Extract<Gesture, { kind: 'erase' }>, to: Vec, s: BoardState)
   let changed = false;
   for (const id of s.order) {
     const it = s.items[id];
-    const pieces = it && eraseStroke(it, g.last, to, radius, tolerance);
+    const pieces = it && !it.locked && eraseStroke(it, g.last, to, radius, tolerance);
     if (pieces) {
       changes[id] = pieces;
       changed = true;
@@ -299,19 +306,53 @@ export function Canvas() {
       return;
     }
 
-    // Drag the curve handle to bend a curved connector; double-press resets it.
-    // (Detected here because pointer capture retargets the dblclick event.)
-    const bendOf = attr(target, 'data-bend-of');
-    if (bendOf) {
+    // Line bending. Double-presses are detected here because pointer capture
+    // retargets the dblclick event.
+    const now = performance.now();
+    const doublePress = (key: string) => {
       const last = lastBendPress.current;
-      const now = performance.now();
-      if (last && last.id === bendOf && now - last.time < DOUBLE_PRESS_MS) {
-        lastBendPress.current = null;
-        s.styleConnectors([bendOf], { bend: null });
+      const isDouble = !!last && last.id === key && now - last.time < DOUBLE_PRESS_MS;
+      lastBendPress.current = isDouble ? null : { id: key, time: now };
+      return isDouble;
+    };
+
+    // Drag a bend point to move it; double-press removes it.
+    const bendOf = attr(target, 'data-bend-of');
+    if (bendOf && s.connectors[bendOf]) {
+      const index = Number(attr(target, 'data-bend-index'));
+      if (doublePress(`${bendOf}:${index}`)) {
+        const bends = bendsOf(s.connectors[bendOf]).filter((_, i) => i !== index);
+        s.styleConnectors([bendOf], { bends: bends.length ? bends : null, bend: null });
         return;
       }
-      lastBendPress.current = { id: bendOf, time: now };
-      begin(e, { kind: 'bend', id: bendOf, moved: false });
+      begin(e, { kind: 'bend', id: bendOf, index, moved: false });
+      return;
+    }
+
+    // Drag a dot between points to add a bend there (one undo step with the drag).
+    const addOf = attr(target, 'data-bend-add-of');
+    const c = addOf ? s.connectors[addOf] : undefined;
+    const r = c && resolveConnector(c, s.items);
+    const bend = r && bendFromPoint(r.a, r.b, world);
+    if (addOf && c && bend) {
+      const index = Number(attr(target, 'data-bend-insert'));
+      const bends = bendsOf(c).slice();
+      bends.splice(index, 0, bend);
+      s.checkpoint();
+      s.updateConnector(addOf, { bends, bend: null });
+      begin(e, { kind: 'bend', id: addOf, index, moved: true });
+      return;
+    }
+
+    // Drag an elbow line's middle segment sideways; double-press puts it back.
+    const channelOf = attr(target, 'data-channel-of');
+    if (channelOf) {
+      if (doublePress(`${channelOf}:channel`)) {
+        s.styleConnectors([channelOf], { channel: null });
+        return;
+      }
+      const axis = attr(target, 'data-channel-axis') === 'y' ? 'y' : 'x';
+      begin(e, { kind: 'channel', id: channelOf, axis, moved: false });
       return;
     }
 
@@ -342,6 +383,13 @@ export function Canvas() {
       return;
     }
 
+    // Comment tool: start a thread where you click.
+    if (s.tool === 'comment') {
+      startComment(world);
+      s.setTool('select');
+      return;
+    }
+
     // Create a new item.
     if (isCreationTool(s.tool)) {
       // Frame tool, Slides preset: click creates a slide deck.
@@ -350,6 +398,12 @@ export function Canvas() {
         return;
       }
       const item = makeItem(s.tool, world.x, world.y);
+      // Rectangle tool: the shape picked in the shapes flyout, at that shape's size.
+      if (item.type === 'rect' && s.shapeKind !== 'rect') {
+        const size = SHAPE_SIZES[s.shapeKind];
+        item.shape = s.shapeKind;
+        if (size) Object.assign(item, { x: world.x - size.w / 2, y: world.y - size.h / 2, w: size.w, h: size.h });
+      }
       if (item.type === 'frame') {
         const preset = FRAME_PRESETS.find((p) => p.id === s.framePreset) ?? FRAME_PRESETS[0];
         Object.assign(item, { x: world.x - preset.w / 2, y: world.y - preset.h / 2, w: preset.w, h: preset.h });
@@ -440,9 +494,12 @@ export function Canvas() {
           collapseTo = hitId;
         }
       }
+      // Locked items stay put (they can still be selected); a locked frame doesn't carry its contents.
+      const movable = selected.filter((id) => !s.items[id]?.locked);
+      if (!movable.length) return;
       // Frames carry their contents, including loose connector ends inside them.
-      const moving = withFrameChildren(selected, s.items, s.order);
-      const frames = selected.map((id) => s.items[id]).filter(isFrame);
+      const moving = withFrameChildren(movable, s.items, s.order).filter((id) => !s.items[id]?.locked);
+      const frames = movable.map((id) => s.items[id]).filter(isFrame);
       const origin: Record<string, Vec> = {};
       const freeEnds: Record<string, FreeEnds> = {};
       const inFrame = (p: Vec) => frames.some((f) => containsPoint(f, p));
@@ -451,7 +508,7 @@ export function Canvas() {
         if (it) origin[id] = { x: it.x, y: it.y };
       }
       for (const c of Object.values(s.connectors)) {
-        const picked = selected.includes(c.id);
+        const picked = movable.includes(c.id);
         const from = c.from.kind === 'point' && (picked || inFrame(c.from)) ? { x: c.from.x, y: c.from.y } : undefined;
         const to = c.to.kind === 'point' && (picked || inFrame(c.to)) ? { x: c.to.x, y: c.to.y } : undefined;
         if (from || to) freeEnds[c.id] = { from, to };
@@ -466,7 +523,7 @@ export function Canvas() {
         moved: false,
         collapseTo,
         // Snap the selection itself; children of a frame just ride along.
-        bounds: boundsOf(selected.map((id) => s.items[id]).filter(Boolean)),
+        bounds: boundsOf(movable.map((id) => s.items[id]).filter(Boolean)),
         targets: movingItems.length ? snapTargets(s, new Set(moving)) : [],
       });
       return;
@@ -559,7 +616,7 @@ export function Canvas() {
         const lock =
           e.shiftKey ||
           origins.length > 1 ||
-          origins.some((o) => o.type === 'sticky') ||
+          origins.some((o) => o.type === 'sticky' || o.type === 'image' || o.type === 'emoji') ||
           (corner && origins.some((o) => o.type === 'text'));
         const b = g.bounds;
         const delta = { x: world.x - g.startWorld.x, y: world.y - g.startWorld.y };
@@ -602,6 +659,8 @@ export function Canvas() {
         // Frames are big backdrops: only pick them when fully enclosed.
         const hits = s.order.filter((id) => {
           const it = s.items[id];
+          // Comment pins are picked by clicking them, not by the marquee.
+          if (!it || it.type === 'comment') return false;
           return isFrame(it) ? containsBox(rect, it) : intersects(it, rect);
         });
         for (const c of Object.values(s.connectors)) {
@@ -695,8 +754,36 @@ export function Canvas() {
           g.moved = true;
           s.checkpoint();
         }
-        const bend = bendFromPoint(r.a, r.b, world);
-        if (bend) s.updateConnector(g.id, { bend });
+        // Snap to the neighbouring points and nearby shapes (Alt: no snapping).
+        let at = world;
+        const geo = connectorGeometry(c, s.items);
+        if (geo && !e.altKey) {
+          const near = 400 / s.camera.z;
+          const boxes = s.order
+            .map((id) => s.items[id])
+            .filter((it) => it && it.type !== 'comment' && it.type !== 'path' && Math.abs(it.x + it.w / 2 - world.x) < near + it.w / 2 && Math.abs(it.y + it.h / 2 - world.y) < near + it.h / 2);
+          const points = [geo.a, ...geo.bendPoints.filter((_, i) => i !== g.index), geo.b];
+          const snapped = snapPoint(world, points, boxes, SNAP_DISTANCE / s.camera.z);
+          at = snapped.p;
+          s.setGuides(snapped.guides);
+        } else s.setGuides([]);
+        const bend = bendFromPoint(r.a, r.b, at);
+        if (!bend) return;
+        const bends = bendsOf(c).slice();
+        bends[g.index] = bend;
+        s.updateConnector(g.id, { bends, bend: null });
+        break;
+      }
+      case 'channel': {
+        const c = s.connectors[g.id];
+        const geo = c && connectorGeometry(c, s.items);
+        if (!geo?.channel) return;
+        if (!g.moved) {
+          g.moved = true;
+          s.checkpoint();
+        }
+        const offset = (g.axis === 'x' ? world.x : world.y) - geo.channel.base;
+        s.updateConnector(g.id, { channel: { axis: g.axis, offset } });
         break;
       }
       case 'reconnect': {
@@ -754,7 +841,12 @@ export function Canvas() {
         if (g.dragged && item && item.w < 20 && item.h < 20) {
           // Accidental tiny drag: fall back to the default (or preset) size.
           const d = makeItem(g.type, g.startWorld.x, g.startWorld.y);
-          const preset = g.type === 'frame' ? FRAME_PRESETS.find((p) => p.id === s.framePreset) : undefined;
+          const preset =
+            g.type === 'frame'
+              ? FRAME_PRESETS.find((p) => p.id === s.framePreset)
+              : g.type === 'rect' && item.shape
+                ? SHAPE_SIZES[item.shape]
+                : undefined;
           if (preset) Object.assign(d, { x: g.startWorld.x - preset.w / 2, y: g.startWorld.y - preset.h / 2, w: preset.w, h: preset.h });
           s.updateItems({ [g.id]: { x: d.x, y: d.y, w: d.w, h: d.h, fontSize: d.fontSize } });
         }
@@ -813,7 +905,7 @@ export function Canvas() {
     ? 'grabbing'
     : tool === 'hand' || spaceHeld
       ? 'grab'
-      : isCreationTool(tool) || tool === 'connector' || tool === 'pen'
+      : isCreationTool(tool) || tool === 'connector' || tool === 'pen' || tool === 'comment'
         ? 'crosshair'
         : 'default';
 
@@ -846,11 +938,14 @@ export function Canvas() {
       }}
       onDrop={(e) => {
         setDropping(false);
-        const file = e.dataTransfer.files[0];
-        if (!file) return;
+        const files = [...e.dataTransfer.files];
+        if (!files.length) return;
         e.preventDefault();
         const s = useBoard.getState();
-        void importBoardFile(file, 'add', screenToWorld(local(e), s.camera));
+        const at = screenToWorld(local(e), s.camera);
+        // Pictures become image items where they are dropped; a .json file adds a board.
+        if (files.some((f) => f.type.startsWith('image/'))) void addImageFiles(files, at);
+        else void importBoardFile(files[0], 'add', at);
       }}
     >
       <World />
@@ -897,6 +992,15 @@ function World() {
   const order = useBoard(
     useShallow((s) => visibleItems(renderOrder(s.order, s.items), s.items, cullRect(s.camera, s.viewport), keepRendered(s.selected, s.editingId))),
   );
+  // Frames with "clip contents": how much of each item inside to cut off.
+  const clips = useBoard(useShallow((s) => clipInsets(s.items, s.order)));
+  // Hidden frames: covered for everyone except the person who hid them.
+  const me = useMyIdentity();
+  const hidden = useBoard(useShallow((s) => framesHiddenFrom(s.items, s.order, me)));
+  const mine = useBoard(
+    useShallow((s) => s.order.filter((id) => s.items[id]?.type === 'frame' && s.items[id]?.hiddenBy === me)),
+  );
+  const items = useBoard((s) => s.items);
   const style = {
     transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.z})`,
     // Lets world-space UI (frame titles) stay a constant size on screen.
@@ -905,9 +1009,29 @@ function World() {
   return (
     <div className="world" style={style}>
       {order.map((id) => (
-        <ItemView key={id} id={id} />
+        <ItemView key={id} id={id} clip={clips[id]} />
       ))}
       <ConnectorLayer />
+      {hidden.map((id) => {
+        const f = items[id];
+        return (
+          f && (
+            <div key={id} className="frame-cover" data-ui style={{ transform: `translate(${f.x}px, ${f.y}px)`, width: f.w, height: f.h }}>
+              <span>{f.text || 'Frame'} is hidden</span>
+            </div>
+          )
+        );
+      })}
+      {mine.map((id) => {
+        const f = items[id];
+        return (
+          f && (
+            <div key={id} className="frame-hidden-badge" style={{ transform: `translate(${f.x + f.w}px, ${f.y}px)` }}>
+              Hidden from others
+            </div>
+          )
+        );
+      })}
     </div>
   );
 }

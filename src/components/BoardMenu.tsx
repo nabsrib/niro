@@ -11,6 +11,7 @@ import {
   switchBoard,
 } from '../boards';
 import { useAccount } from '../account';
+import { toggleFramesPanel, useFramesPanel } from './FramesPanel';
 import { Icons } from './Icons';
 import { useBoard } from '../store';
 import { comboText } from '../shortcuts';
@@ -28,6 +29,7 @@ export function BoardMenu() {
   const boardId = useBoard((s) => s.boardId);
   const current = boards.find((b) => b.id === boardId);
   const signedIn = useAccount((s) => s.user !== null);
+  const framesOpen = useFramesPanel((s) => s.open);
   const guest = useAccount((s) => !!s.user?.guest);
 
   // Opening the menu picks up boards shared with you and renames made elsewhere.
@@ -103,6 +105,15 @@ export function BoardMenu() {
           onClick={() => useBoard.getState().openExport()}
         >
           <Icons.image />
+        </button>
+        <button
+          className={`icon-btn${framesOpen ? ' icon-btn--active' : ''}`}
+          title="Frames: list, go to, reorder"
+          aria-label="Frames"
+          aria-pressed={framesOpen}
+          onClick={toggleFramesPanel}
+        >
+          <Icons.grid />
         </button>
       </div>
       {open && (

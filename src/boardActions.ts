@@ -1,21 +1,27 @@
 import { useBoard } from './store';
 import { commitActiveEdit } from './editing';
 import { downloadJson, exportFileName, readBoardFile, serializeBoard } from './boardFile';
-import type { Vec } from './types';
+import type { Item, Vec } from './types';
+import { assetDataUrls, ensureOnServer, saveDataUrls } from './assets';
+import { openBoardOnServer } from './images';
 
 export type ImportMode = 'replace' | 'add';
 
 const plural = (n: number, word: string, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
 
-/** Download the current board as a .json file. */
-export function exportBoard() {
+/** Picture file ids used by image items. */
+const imageIds = (items: Item[]) => items.flatMap((it) => (it.type === 'image' && it.src ? [it.src] : []));
+
+/** Download the current board as a .json file (pictures of image items included). */
+export async function exportBoard() {
   commitActiveEdit();
   const { items, order, connectors, showNotice } = useBoard.getState();
   if (!order.length && !Object.keys(connectors).length) {
     showNotice('The board is empty, so there is nothing to export.', 'error');
     return;
   }
-  downloadJson(serializeBoard(items, order, connectors), exportFileName());
+  const assets = await assetDataUrls(imageIds(Object.values(items)));
+  downloadJson(serializeBoard(items, order, connectors, assets), exportFileName());
   showNotice(`Exported ${plural(order.length, 'item')} and ${plural(Object.keys(connectors).length, 'connector')}.`);
 }
 
@@ -34,6 +40,9 @@ export async function importBoardFile(file: File, mode: ImportMode, at?: Vec) {
     s.showNotice(`Could not import "${file.name}": ${(err as Error).message}`, 'error');
     return;
   }
+  // Pictures that came with the file: keep them here, and on the server for a shared board.
+  await saveDataUrls(content.assets);
+  if (openBoardOnServer()) void ensureOnServer(imageIds(content.items));
 
   const summary = `${plural(content.items.length, 'item')} and ${plural(content.connectors.length, 'connector')}`;
   const skipped = content.skipped ? ` (${plural(content.skipped, 'invalid entry', 'invalid entries')} skipped)` : '';

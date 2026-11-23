@@ -10,6 +10,8 @@
 // - Accounts: Better Auth under /api/auth/* (server/auth.mjs).
 // - Boards and sharing: /api/boards... (server/boards.mjs).
 // - Your settings (cursor / avatar color): /api/me (server/me.mjs).
+// - Picture files of image items: /api/assets/<id> (server/assets.mjs), in server/data/assets/.
+// - Page titles for link cards: /api/link-preview?url= (server/links.mjs, public addresses only).
 // - Everything except board content is kept in server/data/niro.sqlite (Node's
 //   built-in SQLite, Node 22.5+).
 // - The app talks to all of it through the Vite dev server (vite.config.ts forwards
@@ -25,6 +27,8 @@ import { fromNodeHeaders, toNodeHandler } from 'better-auth/node';
 import { createAuth } from './auth.mjs';
 import { HttpError, createBoards, readJson, setupBoardTables } from './boards.mjs';
 import { createSettings } from './me.mjs';
+import { createAssets } from './assets.mjs';
+import { linkTitle } from './links.mjs';
 
 const PORT = Number(process.env.PORT ?? 1234);
 const DATA = join(dirname(fileURLToPath(import.meta.url)), 'data');
@@ -41,6 +45,22 @@ const auth = await createAuth(db, DATA, { onGuestLinked: (guestId, userId) => bo
 const authHandler = toNodeHandler(auth);
 setupBoardTables(db);
 const settings = createSettings(db);
+const assets = await createAssets(DATA);
+
+/** Picture files (binary, so not through handleApi): signed in and same origin, like the rest of the API. */
+async function handleAssets(request, response, id) {
+  try {
+    const origin = request.headers.origin;
+    if (origin && new URL(origin).host !== request.headers.host) return sendJson(response, 403, { error: 'Wrong origin.' });
+    const session = await auth.api.getSession({ headers: fromNodeHeaders(request.headers) });
+    if (!session) return sendJson(response, 401, { error: 'Sign in first.' });
+    const failed = await assets.handle(request, response, id);
+    if (failed) sendJson(response, failed[0], { error: failed[1] });
+  } catch (err) {
+    console.error(err);
+    if (!response.headersSent) sendJson(response, 500, { error: 'Something went wrong on the server.' });
+  }
+}
 
 function boardFile(name) {
   if (!safeId(name)) throw new Error(`Refused board id "${name}"`);
@@ -116,6 +136,20 @@ const server = new Server({
     }
     if (path === '/api/me') {
       await handleApi(request, response, path, (method, _parts, body, user) => settings.handle(method, body, user));
+      throw null;
+    }
+    if (path === '/api/link-preview') {
+      const target = new URL(request.url ?? '/', 'http://local').searchParams.get('url') ?? '';
+      await handleApi(request, response, path, async (method) => {
+        if (method !== 'GET') throw new HttpError(405, 'Method not allowed.');
+        // A page that can't be read (or isn't allowed) just has no title.
+        const title = await linkTitle(target).catch(() => null);
+        return [200, { title }];
+      });
+      throw null;
+    }
+    if (path.startsWith('/api/assets/')) {
+      await handleAssets(request, response, path.split('/')[3]);
       throw null;
     }
     if (path.startsWith('/api/')) {

@@ -10,6 +10,12 @@ export const ITEM_DEFAULTS: Record<ItemType, Template> = {
   text: { type: 'text', w: 240, h: 34, fill: 'transparent', color: '#1a1a1a', text: '', fontSize: 24 },
   frame: { type: 'frame', w: 640, h: 360, fill: '#FFFFFF', color: '#1a1a1a', text: 'Frame', fontSize: 14 },
   // Pen strokes are built from the drawn points (see pen.ts); these are fallbacks.
+  // Images are sized from the picture (images.ts); these are fallbacks.
+  image: { type: 'image', w: 320, h: 240, fill: 'transparent', color: '#1a1a1a', text: '', fontSize: 14 },
+  emoji: { type: 'emoji', w: 96, h: 96, fill: 'transparent', color: '#1a1a1a', text: '👍', fontSize: 80 },
+  link: { type: 'link', w: 320, h: 96, fill: '#FFFFFF', color: '#1a1a1a', text: '', fontSize: 16 },
+  // Comment pins are drawn in screen space (Comments.tsx); their box is just the pin's spot.
+  comment: { type: 'comment', w: 1, h: 1, fill: 'transparent', color: '#1a1a1a', text: '', fontSize: 14 },
   path: { type: 'path', w: 1, h: 1, fill: 'transparent', color: '#1a1a1a', text: '', fontSize: 14, points: [0, 0, 1, 1], strokeWidth: 3 },
 };
 

@@ -1,4 +1,5 @@
-import type { Bend, Connector, Endpoint, Item, ItemType, Side, TextRun, Vec } from './types';
+import { ARROW_HEADS, type ArrowHead, type Bend, type Connector, type Endpoint, type Item, type ItemType, type Side, type TextRun, type Vec, type ShapeKind } from './types';
+import { SHAPE_KINDS } from './shapes';
 import { normalizeRuns } from './richText';
 import { MIN_ITEM_SIZE, boundsOf, uid } from './geometry';
 import { CONNECTOR_DEFAULTS, LABEL_DEFAULTS } from './connectors';
@@ -8,13 +9,15 @@ import { ITEM_DEFAULTS } from './defaults';
  * JSON file format for exporting/importing a board.
  *
  *   { "format": "niro-board", "version": 1, "exportedAt": "...",
- *     "items": [...in z-order...], "connectors": [...] }
+ *     "items": [...in z-order...], "connectors": [...],
+ *     "assets": { "<image file id>": "data:image/..." } }   (pictures of image items, if any)
  *
  * Import also accepts the app's localStorage shape ({ items: {id: item}, order }).
  */
 export const FILE_FORMAT = 'niro-board';
 export const FILE_VERSION = 1;
-const MAX_FILE_BYTES = 20 * 1024 * 1024;
+/** Files can carry pictures, so they may be large. */
+const MAX_FILE_BYTES = 100 * 1024 * 1024;
 /** Upper bound on numbers in one pen stroke (x/y pairs). */
 const MAX_PATH_VALUES = 200_000;
 
@@ -24,6 +27,8 @@ export interface BoardFile {
   exportedAt: string;
   items: Item[];
   connectors: Connector[];
+  /** Pictures of image items as data URLs, by file id. */
+  assets?: Record<string, string>;
 }
 
 export interface BoardContent {
@@ -37,6 +42,7 @@ export function serializeBoard(
   items: Record<string, Item>,
   order: string[],
   connectors: Record<string, Connector>,
+  assets?: Record<string, string>,
 ): string {
   const file: BoardFile = {
     format: FILE_FORMAT,
@@ -44,6 +50,7 @@ export function serializeBoard(
     exportedAt: new Date().toISOString(),
     items: order.map((id) => items[id]).filter(Boolean),
     connectors: Object.values(connectors),
+    ...(assets && Object.keys(assets).length ? { assets } : {}),
   };
   return JSON.stringify(file, null, 2);
 }
@@ -141,11 +148,65 @@ function sanitizeItem(raw: unknown): Item | null {
         ...(Array.isArray(raw.rich) ? { rich: sanitizeRuns(raw.rich) } : {}),
       }
     : {};
+  // Rectangles: their shape; rectangles and ellipses: their border.
+  const shapeLook: Pick<Item, 'shape' | 'border' | 'borderWidth' | 'borderDash'> =
+    type === 'rect' || type === 'ellipse'
+      ? {
+          ...(type === 'rect' && typeof raw.shape === 'string' && (SHAPE_KINDS as string[]).includes(raw.shape) && raw.shape !== 'rect'
+            ? { shape: raw.shape as ShapeKind }
+            : {}),
+          ...(typeof raw.border === 'string' ? { border: color(raw.border, '#1a1a1a') } : {}),
+          ...(Number.isFinite(raw.borderWidth) ? { borderWidth: Math.min(Math.max(raw.borderWidth as number, 0), 100) } : {}),
+          ...(raw.borderDash === 'dashed' || raw.borderDash === 'dotted' ? { borderDash: raw.borderDash } : {}),
+        }
+      : {};
+  // Lock (any item); frames: clip and hidden; emoji, link cards and comment pins.
+  const extras: Pick<Item, 'locked' | 'clip' | 'hiddenBy' | 'url' | 'thread' | 'resolved'> = {
+    ...(raw.locked === true ? { locked: true } : {}),
+    ...(type === 'frame' && raw.clip === true ? { clip: true } : {}),
+    ...(type === 'frame' && typeof raw.hiddenBy === 'string' && raw.hiddenBy ? { hiddenBy: raw.hiddenBy.slice(0, 100) } : {}),
+  };
+  if (type === 'emoji' && (typeof raw.text !== 'string' || !raw.text.trim() || raw.text.length > 16)) return null;
+  if (type === 'link') {
+    let ok = false;
+    try {
+      const u = new URL(String(raw.url ?? ''));
+      ok = (u.protocol === 'http:' || u.protocol === 'https:') && String(raw.url).length <= 2048;
+    } catch {
+      ok = false;
+    }
+    if (!ok) return null;
+    extras.url = String(raw.url);
+  }
+  if (type === 'comment') {
+    const msgs = Array.isArray(raw.thread) ? raw.thread : [];
+    extras.thread = msgs
+      .filter((m): m is Record<string, unknown> => isObj(m) && typeof m.text === 'string')
+      .slice(0, 500)
+      .map((m) => ({
+        id: typeof m.id === 'string' ? m.id : uid(),
+        author: typeof m.author === 'string' ? m.author.slice(0, 100) : '',
+        authorName: typeof m.authorName === 'string' ? m.authorName.slice(0, 80) : 'Someone',
+        text: (m.text as string).slice(0, 5000),
+        at: Number.isFinite(m.at) ? (m.at as number) : Date.now(),
+      }));
+    if (!extras.thread.length) return null;
+    if (raw.resolved === true) extras.resolved = true;
+  }
+  // Images need the id of their picture file.
+  let image: Pick<Item, 'src'> = {};
+  if (type === 'image') {
+    if (typeof raw.src !== 'string' || !/^[a-f0-9]{32}$/.test(raw.src)) return null;
+    image = { src: raw.src };
+  }
   // Thin strokes (e.g. a straight line) may legitimately be narrower than shapes.
   const minSize = type === 'path' ? 0.5 : MIN_ITEM_SIZE;
 
   return {
     ...pen,
+    ...image,
+    ...shapeLook,
+    ...extras,
     ...slide,
     ...textLook,
     id: raw.id,
@@ -180,9 +241,15 @@ function sanitizeConnector(raw: unknown, itemIds: Set<string>): Connector | null
   const to = sanitizeEndpoint(raw.to, itemIds);
   if (!from || !to) return null;
   const d = CONNECTOR_DEFAULTS;
-  const bend: Bend | null =
-    isObj(raw.bend) && Number.isFinite(raw.bend.along) && Number.isFinite(raw.bend.offset)
-      ? { along: raw.bend.along as number, offset: raw.bend.offset as number }
+  const toBend = (b: unknown): Bend | null =>
+    isObj(b) && Number.isFinite(b.along) && Number.isFinite(b.offset) ? { along: b.along as number, offset: b.offset as number } : null;
+  const bend = toBend(raw.bend);
+  const bends = Array.isArray(raw.bends) ? raw.bends.slice(0, 200).map(toBend).filter((b): b is Bend => !!b) : [];
+  const head = (h: unknown, fallback: ArrowHead): ArrowHead =>
+    typeof h === 'string' && (ARROW_HEADS as string[]).includes(h) ? (h as ArrowHead) : fallback;
+  const channel =
+    isObj(raw.channel) && (raw.channel.axis === 'x' || raw.channel.axis === 'y') && Number.isFinite(raw.channel.offset)
+      ? { axis: raw.channel.axis as 'x' | 'y', offset: raw.channel.offset as number }
       : null;
   return {
     id: raw.id,
@@ -191,9 +258,12 @@ function sanitizeConnector(raw: unknown, itemIds: Set<string>): Connector | null
     style: raw.style === 'straight' || raw.style === 'elbow' || raw.style === 'curved' ? raw.style : d.style,
     stroke: color(raw.stroke, d.stroke),
     strokeWidth: Math.min(Math.max(num(raw.strokeWidth, d.strokeWidth), 0.5), 50),
-    startArrow: raw.startArrow === 'arrow' ? 'arrow' : 'none',
-    endArrow: raw.endArrow === 'none' ? 'none' : 'arrow',
+    startArrow: head(raw.startArrow, 'none'),
+    endArrow: head(raw.endArrow, 'arrow'),
     bend,
+    ...(bends.length ? { bends } : {}),
+    ...(channel ? { channel } : {}),
+    ...(raw.dash === 'dashed' || raw.dash === 'dotted' ? { dash: raw.dash } : {}),
     ...(typeof raw.label === 'string' && raw.label.trim() ? { label: raw.label.slice(0, 10_000) } : {}),
     ...(Number.isFinite(raw.labelAt) ? { labelAt: Math.min(Math.max(raw.labelAt as number, 0), 1) } : {}),
     ...(Number.isFinite(raw.labelSize) ? { labelSize: Math.min(Math.max(raw.labelSize as number, 4), 400) } : {}),
@@ -204,6 +274,8 @@ function sanitizeConnector(raw: unknown, itemIds: Set<string>): Connector | null
 export interface ParseResult extends BoardContent {
   /** Entries that were invalid and left out. */
   skipped: number;
+  /** Pictures that came with the file (data URLs by file id). */
+  assets: Record<string, string>;
 }
 
 /** Parse and validate a board file. Throws an Error with a user-facing message. */
@@ -258,11 +330,18 @@ export function parseBoard(text: string): ParseResult {
   }
   const skipped = rawItems.length + rawConnectors.length - items.length - connectors.length;
   if (!items.length && !connectors.length) throw new Error('This board file is empty.');
-  return { items, connectors, skipped };
+  // Pictures: only image data URLs under well-formed ids.
+  const assets: Record<string, string> = {};
+  if (isObj(data.assets)) {
+    for (const [id, url] of Object.entries(data.assets)) {
+      if (/^[a-f0-9]{32}$/.test(id) && typeof url === 'string' && url.startsWith('data:image/')) assets[id] = url;
+    }
+  }
+  return { items, connectors, skipped, assets };
 }
 
 export async function readBoardFile(file: File): Promise<ParseResult> {
-  if (file.size > MAX_FILE_BYTES) throw new Error('This file is too large (over 20 MB).');
+  if (file.size > MAX_FILE_BYTES) throw new Error('This file is too large (over 100 MB).');
   return parseBoard(await file.text());
 }
 

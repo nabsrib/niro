@@ -198,3 +198,31 @@ export function snapMove(box: Box, targets: Box[], threshold: number): { offset:
   const moved = { ...box, x: box.x + offset.x, y: box.y + offset.y };
   return { offset, guides: alignmentGuides(moved, targets), gaps: spacingGaps(moved, targets) };
 }
+
+/**
+ * Snap a dragged point (a bend point) to the x / y of other points (its
+ * neighbours, so segments can run straight across or up and down) and to the
+ * edges and centers of boxes, within `threshold`. Returns the point and the
+ * guides to show.
+ */
+export function snapPoint(p: Vec, points: Vec[], boxes: Box[], threshold: number): { p: Vec; guides: Guide[] } {
+  type Stop = { v: number; lo: number; hi: number };
+  const xs: Stop[] = points.map((q) => ({ v: q.x, lo: q.y, hi: q.y }));
+  const ys: Stop[] = points.map((q) => ({ v: q.y, lo: q.x, hi: q.x }));
+  for (const b of boxes) {
+    for (const v of xStops(b)) xs.push({ v, lo: b.y, hi: b.y + b.h });
+    for (const v of yStops(b)) ys.push({ v, lo: b.x, hi: b.x + b.w });
+  }
+  const nearest = (stops: Stop[], at: number) => {
+    let best: Stop | null = null;
+    for (const s of stops) if (Math.abs(s.v - at) <= threshold && (!best || Math.abs(s.v - at) < Math.abs(best.v - at))) best = s;
+    return best;
+  };
+  const sx = nearest(xs, p.x);
+  const sy = nearest(ys, p.y);
+  const out = { x: sx ? sx.v : p.x, y: sy ? sy.v : p.y };
+  const guides: Guide[] = [];
+  if (sx) guides.push({ axis: 'x', at: sx.v, from: Math.min(sx.lo, out.y), to: Math.max(sx.hi, out.y) });
+  if (sy) guides.push({ axis: 'y', at: sy.v, from: Math.min(sy.lo, out.x), to: Math.max(sy.hi, out.x) });
+  return { p: out, guides };
+}

@@ -30,6 +30,7 @@ export const TOOL_SHORTCUTS: { tool: Tool; label: string; key: string }[] = [
   { tool: 'connector', label: 'Connector', key: 'L' },
   { tool: 'pen', label: 'Pen', key: 'P' },
   { tool: 'frame', label: 'Frame', key: 'F' },
+  { tool: 'comment', label: 'Comment', key: 'C' },
 ];
 
 export const SHORTCUT_GROUPS: ShortcutGroup[] = [
@@ -39,6 +40,9 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       ...TOOL_SHORTCUTS.map(({ label, key }) => ({ label, combos: [[key]] })),
       { label: 'Highlighter', combos: [['Shift', 'P']] },
       { label: 'Eraser', combos: [['E']] },
+      { label: 'Add an image (or paste / drop one)', combos: [['I']] },
+      { label: 'Emoji', combos: [['J']] },
+      { label: 'Link card (or paste a web address)', combos: [['K']] },
     ],
   },
   {
@@ -49,9 +53,10 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { label: 'Duplicate', combos: [['Mod', 'D']] },
       { label: 'Copy', combos: [['Mod', 'C']] },
       { label: 'Cut', combos: [['Mod', 'X']] },
-      { label: 'Paste', combos: [['Mod', 'V']] },
+      { label: 'Paste (items, or a copied picture)', combos: [['Mod', 'V']] },
       { label: 'Delete', combos: [['Del'], ['Backspace']] },
       { label: 'Select all', combos: [['Mod', 'A']] },
+      { label: 'Lock / unlock', combos: [['Mod', 'Shift', 'L']] },
       { label: 'Deselect', combos: [['Esc']] },
       { label: 'Edit text or connector label', combos: [['Enter'], ['Double-click']] },
       { label: 'Finish editing', combos: [['Esc'], ['Mod', 'Enter']] },

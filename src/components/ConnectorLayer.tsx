@@ -2,7 +2,7 @@ import { memo, useLayoutEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useBoard } from '../store';
 import { cullRect, keepRendered, visibleConnectors } from '../culling';
-import { LABEL_DEFAULTS, connectorGeometry, pointAlong } from '../connectors';
+import { LABEL_DEFAULTS, connectorGeometry, dashArray, pointAlong } from '../connectors';
 import type { Item } from '../types';
 import { TextEditor } from './ItemView';
 
@@ -111,10 +111,23 @@ const ConnectorView = memo(function ConnectorView({ id }: { id: string }) {
         strokeWidth={c.strokeWidth}
         strokeLinecap="round"
         strokeLinejoin="round"
+        strokeDasharray={dashArray(c.dash, c.strokeWidth)}
         mask={mask}
       />
-      {g.startHead && <path d={g.startHead} fill={c.stroke} stroke={c.stroke} strokeLinejoin="round" />}
-      {g.endHead && <path d={g.endHead} fill={c.stroke} stroke={c.stroke} strokeLinejoin="round" />}
+      {[g.startHead, g.endHead].map(
+        (h, i) =>
+          h && (
+            <path
+              key={i}
+              d={h.d}
+              fill={h.fill ? c.stroke : 'none'}
+              stroke={c.stroke}
+              strokeWidth={h.fill ? 1 : c.strokeWidth}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          ),
+      )}
       {/* Wide invisible stroke so thin lines are easy to click at any zoom. */}
       <path d={g.d} className="connector__hit" />
       {at && (

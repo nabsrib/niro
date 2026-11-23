@@ -102,13 +102,25 @@ async function syncColor() {
   }
 }
 
-/** Ask the server who is signed in (on start, and when another tab signs in or out). */
+/** True until the first answer about the session: on start, a signed-out person is asked to sign in. */
+let starting = true;
+
+/**
+ * Ask the server who is signed in (on start, and when another tab signs in or out).
+ * On start, when the server answers that nobody is signed in, the sign-in dialog opens
+ * (closing it keeps working with boards in this browser only). Not when the server is unreachable.
+ */
 export async function loadSession(): Promise<void> {
+  const first = starting;
+  starting = false;
   try {
     const { data, error } = await authClient.getSession();
     if (error && (!error.status || error.status >= 500)) return void useAccount.setState({ status: 'offline' });
     if (data?.user) signedIn(data.user);
-    else useAccount.setState({ status: 'signed-out', user: null });
+    else {
+      const { dialog } = useAccount.getState();
+      useAccount.setState({ status: 'signed-out', user: null, dialog: first && !dialog ? 'sign-in' : dialog });
+    }
   } catch {
     useAccount.setState({ status: 'offline' });
   }

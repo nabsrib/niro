@@ -49,7 +49,7 @@
 
 ## About
 
-niro is an infinite canvas for sticky notes, shapes, connectors, freehand drawing, frames and slide decks,
+niro is an infinite canvas for sticky notes, shapes, images, connectors, freehand drawing, frames and slide decks,
 built with React, TypeScript and Yjs. It works fully in the browser on its own (boards are saved locally,
 no account needed), and a small optional server adds what makes a whiteboard a team tool:
 
@@ -67,8 +67,24 @@ no account needed), and a small optional server adds what makes a whiteboard a t
 - **Infinite canvas**: wheel to pan, Ctrl/Cmd + wheel or pinch to zoom (5%–800%), right-drag (like Miro),
   Space + drag, middle mouse or the Hand tool to pan; a dotted grid that adapts to the zoom.
 - **Items**: sticky notes, text, rectangles and ellipses (click to place, or drag to size).
+- **Shapes** (like Miro): the Rectangle tool (R) opens a shapes flyout: rectangle, rounded rectangle, triangle,
+  diamond, parallelogram, hexagon, star, arrow, cylinder and speech bubble, all with text inside. Change a
+  shape later from its toolbar. Connectors meet a shape's real outline (a diamond's corners, a triangle's sides).
+- **Borders** on rectangles, shapes and ellipses: color, width (or none) and pattern (solid, dashed, dotted).
+- **Emoji** (J or the toolbar): pick from reactions, status signs, things and arrows; placed in the middle of
+  the view, resized like any item (keeps its shape).
+- **Link cards** (K, or paste a web address): a card with the page's title (looked up by the niro server,
+  public addresses only) and its site; ↗ opens it. Edit the title or address from its toolbar.
+- **Comments** (C): click the board to start a thread; a pin marks it. Click a pin to read and reply
+  (Ctrl+Enter), resolve / reopen or delete; drag a pin to move it. Pins keep their size at any zoom and move
+  with their frame. Viewers can read comments.
+- **Lock** (toolbar or Ctrl+Shift+L): locked items can be selected, copied and connected to, but not moved,
+  resized, edited or deleted. A locked frame stays put while what is inside stays editable.
+- **Images**: paste a picture (Ctrl+V), drop image files on the board, or use the Image button (I). PNG, JPEG,
+  GIF and WebP up to 10 MB; resizing keeps the picture's shape. Images work like other items: inside frames they
+  move, copy and present with the frame, and they are included in image and JSON exports.
 - **Select and arrange**: click, Shift-click and marquee selection, move, 8-handle resize (sticky notes keep
-  their shape; Shift locks it for others), duplicate, copy / cut / paste, delete, arrow-key nudge, bring to
+  and images keep their shape; Shift locks it for others), duplicate, copy / cut / paste, delete, arrow-key nudge, bring to
   front / send to back, color palette.
 - **Snapping**: edges and centers line up with nearby items (pink guides), and moving snaps to equal spacing
   with gap markers. Hold Alt to move freely.
@@ -87,8 +103,15 @@ no account needed), and a small optional server adds what makes a whiteboard a t
 
 - Drag from the blue dots around a selected item, or use the Connector tool (L). Hovering a dot previews a
   connected copy of the shape; clicking it creates that copy and starts editing its text.
-- Ends snap to side midpoints or float on the outline; **straight, elbow** (routes around items) **or curved**,
-  with arrowheads at either end. Drag an end to re-attach it; drag the diamond handle to shape a curve.
+- Ends snap to side midpoints or float on the outline; **straight, elbow** (routes around items) **or curved**.
+  Drag an end to re-attach it.
+- **Bending lines** (like Miro): on a selected straight or curved line, drag one of the small dots between
+  points to add a bend there; drag a bend point to move it, double-click it to remove it. Straight lines keep
+  sharp corners, curved lines pass smoothly through every bend. On an elbow line, drag the bar on its middle
+  segment sideways (double-click puts it back). "Reset line" removes all bends.
+- **Line style**: start and end shapes (none, arrow, open arrow, dot, diamond, bar) and pattern (solid, dashed,
+  dotted) from the line's toolbar, plus color and width. Dragged bend points snap to their neighbours
+  (straight across or up and down) and to nearby shapes, with pink guides; hold Alt to move freely.
 - **Labels**: double-click a connector to type a label that follows the line; drag it along the line, set its
   size and color.
 
@@ -101,7 +124,12 @@ no account needed), and a small optional server adds what makes a whiteboard a t
 ### Frames, slide decks and presenting
 
 - **Frames** (F): titled areas behind everything; moving or copying a frame takes its contents along, and
-  frames nest. Formats like Miro: Custom, 16:9, 4:3, 1:1, A4, Phone and Slides.
+  frames nest. Formats like Miro: Custom, 16:9, 4:3, 1:1, A4, Phone and Slides. Pick a palette color to set a
+  frame's background; "Fit frame to its contents" in its toolbar wraps it around what is inside. Also in a
+  frame's toolbar: **clip contents** (cut off what sticks out), **hide from others** (only you see it; others
+  see a cover until you reveal it) and **copy link to frame** (opens the board zoomed to that frame).
+- **Frames panel** (the grid button in the top-left bar): every frame with a live thumbnail; click to go
+  there, double-click a name to rename, drag to reorder the presentation, eye to hide a frame from it.
 - **Slide decks**: slides laid out in one row; drag a frame onto a deck to insert it, drag slides to reorder,
   drag one out to remove it.
 - **Focus mode**: dims everything outside one frame while you keep editing.
@@ -132,7 +160,9 @@ no account needed), and a small optional server adds what makes a whiteboard a t
 
 - **Accounts**: email + password (stored only as a secure hash), account settings for your name, color and
   password; all tabs of a browser share one sign-in.
-- **Boards with your account**: listed on every device; boards made before signing in can be moved in.
+- **Boards with your account**: listed on every device. When you sign in, boards made in this browser are
+  offered to move into the account, and empty ones (like the starter "My board") are dropped. Signed in, a board
+  still only in this browser moves into your account by itself as soon as you work on it.
 - **Sharing**: invite people by email as editor or viewer, change roles, remove people, and set the link to
   only invited people, anyone with the link can view, or anyone with the link can edit.
 - **Guests**: owners can let people without an account use the link; guests join with just a name.
@@ -169,7 +199,8 @@ npm run server
 It listens on port 1234 and keeps its data in `server/data/` (git-ignored). The app reaches it through the
 Vite dev server, so you still only open **http://localhost:5173**. Then:
 
-1. Click **Sign in** (top-right) and create an account.
+1. The sign-in dialog opens when you start niro signed out (or click **Sign in**, top-right); create an account.
+   Close it to keep working with boards in this browser only.
 2. Create a board, click **Share**, and invite someone by the email of their niro account, or set the link
    to "Anyone with the link can view / edit".
 3. Send them the link. They see your cursor, and you see theirs.
@@ -213,6 +244,9 @@ phone ──Wi-Fi──► your computer :5173 (Vite: the app)
 | --- | --- |
 | V / H / N / T / R / O / L / P / F | Select / Hand / Sticky / Text / Rectangle / Ellipse / Connector / Pen / Frame |
 | Shift+P / E | Highlighter / Eraser |
+| I | Add an image (pick a file); Ctrl+V pastes a copied picture |
+| J / K / C | Emoji / link card (Ctrl+V pastes a web address as one) / comment |
+| Ctrl+Shift+L | Lock / unlock the selection |
 | Right-drag, middle-drag, Space + drag | Pan |
 | Double-click a sticky, shape or text | Edit its text |
 | Alt (while dragging) | Disable snapping |
@@ -263,7 +297,8 @@ niro/
 │   ├── index.mjs           live boards (Hocuspocus) + web API, one port
 │   ├── auth.mjs            accounts and guests (Better Auth)
 │   ├── boards.mjs          boards, members, link / guest access, /api/boards
-│   └── me.mjs              your settings (color), /api/me
+│   ├── me.mjs              your settings (color), /api/me
+│   └── assets.mjs          picture files of image items, /api/assets
 ├── src/
 │   ├── collab/             Yjs document, store bridge, undo, tab sync, server connection, presence
 │   ├── components/         canvas, items, toolbars, dialogs, presenter, presence UI
@@ -280,7 +315,7 @@ niro/
 
 - `src/store.ts`: board state, actions, history, persistence subscription
 - `src/geometry.ts`: camera math (screen and world coordinates), hit-testing, resize
-- `src/connectors.ts`: connector endpoints, attaching, path geometry (straight/elbow/curved), arrowheads, label positions
+- `src/connectors.ts`: connector endpoints, attaching, path geometry (straight/elbow/curved, bend points, elbow channel), end shapes, dash patterns, label positions
 - `src/culling.ts`: viewport culling (area to render, visible items and connectors)
 - `src/devStress.ts`, `src/components/DevStats.tsx`: dev-only stress test and rendered/total counter
 - `src/snapping.ts`: edge/center snapping, equal-spacing snapping, alignment guides and gap markers
@@ -300,6 +335,16 @@ niro/
 - `src/collab/user.ts`: your name and color on shared boards
 - `src/account.ts`: your account on the page (`useAccount`, sign up / in / out, guests, settings, tabs in step)
 - `src/api.ts`: calls to the server API (`boardsApi`, `meApi`)
+- `src/shapes.ts`: shape outlines (paths, polygons, text room, where a line meets the outline), border defaults
+- `src/components/ShapeOptions.tsx`: shapes flyout of the Rectangle tool; `ShapeStyle.tsx`: shape and border controls
+- `src/components/FramesPanel.tsx`: frames panel with thumbnails
+- `src/emoji.ts`, `src/components/EmojiPicker.tsx`: emoji list, placing, picker
+- `src/links.ts`: link cards (addresses, adding, title lookup); `server/links.mjs`: `/api/link-preview` (public addresses only)
+- `src/components/Comments.tsx`: comment pins and threads
+- `src/identity.ts`: who "I" am (account id or this browser's id) for hidden frames and comments
+- `src/assets.ts`: picture files of image items (random ids, kept in the browser and on the server)
+- `src/images.ts`: adding images (paste, drop, Image button), sized to the view
+- `src/hooks/useAssetUrl.ts`: URL to show a picture, retrying while it is still uploading
 - `src/exportImage.ts`: board content to SVG (both text modes), what an export area contains
 - `src/exportActions.ts`: text measuring, SVG → PNG, downloads
 - `src/textStyle.ts`: text options (fields, defaults, sizes, colors) shared by the board and export
@@ -320,6 +365,7 @@ niro/
 - `server/auth.mjs`: accounts and guests (Better Auth: email + password, anonymous plugin, sessions, allowed hosts, secret)
 - `server/boards.mjs`: boards, members, link and guest access, roles, the `/api/boards` API
 - `server/me.mjs`: your settings kept with the account (color), `/api/me`
+- `server/assets.mjs`: picture files of image items, `/api/assets/<id>` (`server/data/assets/`)
 
 </details>
 
@@ -340,6 +386,7 @@ niro/
 | Boards you use in a browser | That browser's IndexedDB (each browser and device has its own copy) |
 | Boards kept with an account | `server/data/<board id>.ydoc` on the computer running the server |
 | Accounts, sessions, boards, members, settings | `server/data/niro.sqlite` (passwords only as secure hashes) |
+| Pictures of image items | The browser's IndexedDB, and `server/data/assets/` for boards kept with an account |
 | Session signing secret | `server/data/auth-secret.txt` (or `BETTER_AUTH_SECRET`); keep it private |
 
 `server/data/` is git-ignored. Back it up to keep shared boards and accounts.
@@ -352,7 +399,10 @@ niro/
 - [x] Accounts, boards with your account, sharing, view only, guests, account settings
 - [ ] HTTPS and a production setup, before putting niro on the internet
 - [ ] Level of detail when zoomed far out, and a spatial index for 50k+ items
-- [ ] Boards dashboard with thumbnails, and pasted images
+- [x] Images (paste, drop, button), bending lines, line patterns and end shapes
+- [x] More shapes, borders, frame background and fit to contents, frames panel
+- [x] Emoji, link cards, comments, lock, clip / hide frames, frame links, bend snapping
+- [ ] Boards dashboard with thumbnails
 - [ ] Typing together in one item (letter-by-letter merging)
 
 ## Contributing

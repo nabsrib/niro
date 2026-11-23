@@ -271,4 +271,50 @@ export const Icons = {
       <path d="M19 9h1v11H9v-1" />
     </Svg>
   ),
+  comment: () => (
+    <Svg>
+      <path d="M4 5h16v11H9l-5 4z" />
+    </Svg>
+  ),
+  emoji: () => (
+    <Svg>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M8.5 14.5a4.5 4.5 0 007 0" />
+      <path d="M9 9.5h.01M15 9.5h.01" strokeWidth="2.6" />
+    </Svg>
+  ),
+  link: () => (
+    <Svg>
+      <path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1.3 1.3" />
+      <path d="M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1.3-1.3" />
+    </Svg>
+  ),
+  lock: () => (
+    <Svg>
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 018 0v3" />
+    </Svg>
+  ),
+  unlock: () => (
+    <Svg>
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 017.5-2" />
+    </Svg>
+  ),
+  crop: () => (
+    <Svg>
+      <path d="M6 2v14a2 2 0 002 2h14M2 6h14a2 2 0 012 2v14" />
+    </Svg>
+  ),
+  hide: () => (
+    <Svg>
+      <path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z" />
+      <path d="M4 4l16 16" />
+    </Svg>
+  ),
+  external: () => (
+    <Svg>
+      <path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5" />
+    </Svg>
+  ),
 };

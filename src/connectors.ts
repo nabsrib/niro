@@ -1,5 +1,6 @@
-import type { Bend, Box, Connector, Endpoint, Item, Side, Vec } from './types';
+import type { ArrowHead, Bend, Box, Connector, ElbowChannel, Endpoint, Item, LineDash, Side, Vec } from './types';
 import { boundsOf, containsPoint, uid } from './geometry';
+import { polygonExit, shapeOf } from './shapes';
 
 export const SIDES: Side[] = ['top', 'right', 'bottom', 'left'];
 
@@ -64,7 +65,9 @@ function boundaryToward(it: Item, target: Vec): { p: Vec; dir: Vec } {
     it.type === 'ellipse'
       ? 1 / Math.sqrt((dx / rx) ** 2 + (dy / ry) ** 2)
       : Math.min(rx / Math.abs(dx || 1e-9), ry / Math.abs(dy || 1e-9));
-  const p = { x: c.x + dx * t, y: c.y + dy * t };
+  // Polygon shapes (triangle, diamond, star…): meet their outline, not the box.
+  const exit = polygonExit(shapeOf(it), it.w, it.h, { x: target.x - it.x, y: target.y - it.y });
+  const p = exit ? { x: it.x + exit.x, y: it.y + exit.y } : { x: c.x + dx * t, y: c.y + dy * t };
   // The outgoing direction is the normal of the side we exit through.
   const dir =
     Math.abs(dx) / rx >= Math.abs(dy) / ry ? { x: Math.sign(dx), y: 0 } : { x: 0, y: Math.sign(dy) };
@@ -83,7 +86,12 @@ function resolveEnd(e: Endpoint, other: Vec, items: ItemMap): { p: Vec; dir: Vec
   if (e.kind === 'point') return { p: { x: e.x, y: e.y }, dir: null };
   const it = items[e.itemId];
   if (!it) return null;
-  if (e.side) return { p: sidePoint(it, e.side), dir: NORMALS[e.side] };
+  if (e.side) {
+    // On a polygon shape the side point is where the outline crosses toward that side's midpoint.
+    const mid = sidePoint(it, e.side);
+    const exit = polygonExit(shapeOf(it), it.w, it.h, { x: mid.x - it.x, y: mid.y - it.y });
+    return { p: exit ? { x: it.x + exit.x, y: it.y + exit.y } : mid, dir: NORMALS[e.side] };
+  }
   return boundaryToward(it, other);
 }
 
@@ -124,9 +132,56 @@ function segmentHitsBox(p: Vec, q: Vec, b: Box): boolean {
  * stubs are scored: shortest wins, with a heavy penalty for cutting through
  * either connected item or doubling back against a stub.
  */
-function elbowPoints({ a, b, da, db }: Resolved, obstacles: Box[]): Vec[] {
+function elbowPoints(r: Resolved, obstacles: Box[], channel: ElbowChannel | null): ElbowRoute {
+  const { a, b, da, db } = r;
   const a2 = da ? add(a, mul(da, ELBOW_STUB)) : a;
   const b2 = db ? add(b, mul(db, ELBOW_STUB)) : b;
+  const baseOf = (axis: 'x' | 'y') => (axis === 'x' ? (a2.x + b2.x) / 2 : (a2.y + b2.y) / 2);
+
+  // A hand-placed middle segment: out of the start stub, along the channel, into the end stub.
+  if (channel) {
+    const base = baseOf(channel.axis);
+    const v = base + channel.offset;
+    const mid = channel.axis === 'x' ? [{ x: v, y: a2.y }, { x: v, y: b2.y }] : [{ x: a2.x, y: v }, { x: b2.x, y: v }];
+    return {
+      pts: simplify([a, a2, ...mid, b2, b]),
+      handle: { p: mul(add(mid[0], mid[1]), 0.5), axis: channel.axis, base },
+    };
+  }
+  const pts = autoElbow(a, b, a2, b2, da, db, obstacles);
+  // Handle on the longest middle segment (not the stubs), which becomes the channel when dragged.
+  let best = -1;
+  let bestLen = -1;
+  const inner = pts.length > 3;
+  for (let i = inner ? 1 : 0; i < pts.length - (inner ? 2 : 1); i++) {
+    const l = len(sub(pts[i + 1], pts[i]));
+    if (l > bestLen) {
+      bestLen = l;
+      best = i;
+    }
+  }
+  if (best < 0) return { pts, handle: null };
+  const p = pts[best];
+  const q = pts[best + 1];
+  const axis = Math.abs(p.x - q.x) < 0.01 ? 'x' : 'y';
+  return { pts, handle: { p: mul(add(p, q), 0.5), axis, base: baseOf(axis) } };
+}
+
+interface ElbowRoute {
+  pts: Vec[];
+  handle: ChannelHandle | null;
+}
+
+/** The movable middle segment of an elbow line: where its handle sits and how its offset is measured. */
+export interface ChannelHandle {
+  p: Vec;
+  axis: 'x' | 'y';
+  /** Coordinate (on `axis`) of the point halfway between the ends; the channel's offset is measured from it. */
+  base: number;
+}
+
+/** Automatic orthogonal route (see elbowPoints). */
+function autoElbow(a: Vec, b: Vec, a2: Vec, b2: Vec, da: Vec | null, db: Vec | null, obstacles: Box[]): Vec[] {
   // Channels to route through: halfway between the ends, or just outside
   // everything involved (to go around the items).
   const all = boundsOf([...obstacles, { ...a2, w: 0, h: 0 }, { ...b2, w: 0, h: 0 }])!;
@@ -193,12 +248,60 @@ function roundedPolyline(pts: Vec[], radius: number): string {
   return d + ` L ${fmt(pts[pts.length - 1])}`;
 }
 
-function arrowHead(tip: Vec, dir: Vec, size: number): string {
-  const base = sub(tip, mul(dir, size));
+/** An end shape: its outline, and whether it is filled (else drawn as a line). */
+export interface HeadShape {
+  d: string;
+  fill: boolean;
+}
+
+/** How far (as a fraction of the head size) the line stops short of the tip, so it ends under the head. */
+const HEAD_TRIM: Record<ArrowHead, number> = { none: 0, arrow: 0.7, open: 0.1, circle: 0.8, diamond: 0.95, bar: 0 };
+
+function headShape(kind: ArrowHead, tip: Vec, dir: Vec, size: number): HeadShape | null {
   const n = { x: -dir.y, y: dir.x };
-  const p1 = add(base, mul(n, size * 0.5));
-  const p2 = sub(base, mul(n, size * 0.5));
-  return `M ${fmt(tip)} L ${fmt(p1)} L ${fmt(p2)} Z`;
+  switch (kind) {
+    case 'arrow': {
+      const base = sub(tip, mul(dir, size));
+      return { d: `M ${fmt(tip)} L ${fmt(add(base, mul(n, size * 0.5)))} L ${fmt(sub(base, mul(n, size * 0.5)))} Z`, fill: true };
+    }
+    case 'open': {
+      const base = sub(tip, mul(dir, size * 0.9));
+      return { d: `M ${fmt(add(base, mul(n, size * 0.5)))} L ${fmt(tip)} L ${fmt(sub(base, mul(n, size * 0.5)))}`, fill: false };
+    }
+    case 'circle': {
+      const r = size * 0.4;
+      const c = sub(tip, mul(dir, r));
+      return {
+        d: `M ${round(c.x + r)} ${round(c.y)} A ${round(r)} ${round(r)} 0 1 0 ${round(c.x - r)} ${round(c.y)} A ${round(r)} ${round(r)} 0 1 0 ${round(c.x + r)} ${round(c.y)} Z`,
+        fill: true,
+      };
+    }
+    case 'diamond': {
+      const m = sub(tip, mul(dir, size * 0.5));
+      const back = sub(tip, mul(dir, size));
+      return {
+        d: `M ${fmt(tip)} L ${fmt(add(m, mul(n, size * 0.35)))} L ${fmt(back)} L ${fmt(sub(m, mul(n, size * 0.35)))} Z`,
+        fill: true,
+      };
+    }
+    case 'bar':
+      return { d: `M ${fmt(add(tip, mul(n, size * 0.5)))} L ${fmt(sub(tip, mul(n, size * 0.5)))}`, fill: false };
+    default:
+      return null;
+  }
+}
+
+/** SVG stroke-dasharray for a line pattern at this stroke width (undefined = solid). */
+export function dashArray(dash: LineDash | null | undefined, width: number): string | undefined {
+  if (dash === 'dashed') return `${round(width * 4)} ${round(width * 3)}`;
+  if (dash === 'dotted') return `0 ${round(width * 2.2)}`;
+  return undefined;
+}
+
+/** A connector's bend points (older saves keep a single curve bend in `bend`). */
+export function bendsOf(c: Connector): Bend[] {
+  if (c.bends && c.bends.length) return c.bends;
+  return c.style === 'curved' && c.bend ? [c.bend] : [];
 }
 
 const bezier = (p0: Vec, p1: Vec, p2: Vec, p3: Vec, t: number): Vec => {
@@ -208,19 +311,6 @@ const bezier = (p0: Vec, p1: Vec, p2: Vec, p3: Vec, t: number): Vec => {
     y: u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y,
   };
 };
-
-export interface ConnectorGeometry {
-  a: Vec;
-  b: Vec;
-  d: string;
-  startHead: string | null;
-  endHead: string | null;
-  /** Points along the path, for hit-testing and bounds. */
-  samples: Vec[];
-  bounds: Box;
-  /** Middle of the path: where the curve handle sits. */
-  mid: Vec;
-}
 
 /** World position of a bend for a connector running from `a` to `b`. */
 export function bendPoint(a: Vec, b: Vec, bend: Bend): Vec {
@@ -245,42 +335,78 @@ export function bendFromPoint(a: Vec, b: Vec, p: Vec): Bend | null {
   };
 }
 
+export interface ConnectorGeometry {
+  a: Vec;
+  b: Vec;
+  d: string;
+  startHead: HeadShape | null;
+  endHead: HeadShape | null;
+  /** Points along the path, for hit-testing and bounds. */
+  samples: Vec[];
+  bounds: Box;
+  /** Middle of the path. */
+  mid: Vec;
+  /** Bend points in world space, in order (straight and curved lines), for their handles. */
+  bendPoints: Vec[];
+  /** Spots between neighbouring points where dragging adds a bend (`index`: where it goes in `bends`). */
+  addPoints: { index: number; p: Vec }[];
+  /** Elbow lines: the handle of the movable middle segment. */
+  channel: ChannelHandle | null;
+}
+
 export function connectorGeometry(c: Connector, items: ItemMap): ConnectorGeometry | null {
-  const r = resolveConnector(c, items);
-  if (!r) return null;
+  const r0 = resolveConnector(c, items);
+  if (!r0) return null;
+  // Bend points are placed relative to the straight line between the ends as
+  // resolved toward each other (the same line `bendFromPoint` measures against).
+  const bends = c.style === 'elbow' || len(sub(r0.b, r0.a)) < 1e-6 ? [] : bendsOf(c);
+  const P = bends.map((bd) => bendPoint(r0.a, r0.b, bd));
+  // A floating end then aims at its nearest bend point instead of the far end.
+  let r = r0;
+  if (P.length) {
+    const A = c.from.kind === 'item' && !c.from.side ? resolveEnd(c.from, P[0], items) : null;
+    const B = c.to.kind === 'item' && !c.to.side ? resolveEnd(c.to, P[P.length - 1], items) : null;
+    r = { a: A?.p ?? r0.a, da: A ? A.dir : r0.da, b: B?.p ?? r0.b, db: B ? B.dir : r0.db };
+  }
   const { a, b } = r;
   const head = 8 + c.strokeWidth * 2;
-  // Pull the stroke back under the arrowhead so it does not poke past the tip.
-  const trim = head * 0.7;
+  // Pull the stroke back under the end shapes so it does not poke past them.
+  const trimA = head * HEAD_TRIM[c.startArrow];
+  const trimB = head * HEAD_TRIM[c.endArrow];
   let d: string;
   let tanA: Vec; // direction of travel leaving `a`
   let tanB: Vec; // direction of travel arriving at `b`
   let samples: Vec[];
-  let mid: Vec;
+  let addPoints: { index: number; p: Vec }[] = [];
+  let channel: ChannelHandle | null = null;
 
   const sampleCurve = (p0: Vec, p1: Vec, p2: Vec, p3: Vec) =>
     Array.from({ length: 13 }, (_, i) => bezier(p0, p1, p2, p3, i / 12));
 
-  if (c.style === 'curved' && c.bend && len(sub(b, a)) > 1e-6) {
-    // Two cubic segments that meet smoothly at the bend point P; the tangent
-    // at P runs parallel to the line between the ends.
-    const P = bendPoint(a, b, c.bend);
-    const l1 = Math.max(len(sub(P, a)), 1);
-    const l2 = Math.max(len(sub(b, P)), 1);
-    const da = r.da ?? norm(sub(P, a));
-    const db = r.db ?? norm(sub(P, b));
-    const tP = norm(sub(b, a));
-    const c1 = add(a, mul(da, l1 * 0.5));
-    const c2 = sub(P, mul(tP, l1 * 0.4));
-    const c3 = add(P, mul(tP, l2 * 0.4));
-    const c4 = add(b, mul(db, l2 * 0.5));
-    tanA = norm(sub(c1, a));
-    tanB = norm(sub(b, c4));
-    const a2 = c.startArrow === 'arrow' ? add(a, mul(tanA, trim)) : a;
-    const b2 = c.endArrow === 'arrow' ? sub(b, mul(tanB, trim)) : b;
-    d = `M ${fmt(a2)} C ${fmt(c1)} ${fmt(c2)} ${fmt(P)} C ${fmt(c3)} ${fmt(c4)} ${fmt(b2)}`;
-    samples = [...sampleCurve(a, c1, c2, P), ...sampleCurve(P, c3, c4, b).slice(1)];
-    mid = P;
+  if (c.style === 'curved' && P.length) {
+    // A smooth curve through every bend point: one cubic segment per gap. At a
+    // bend the curve runs parallel to the line between its neighbours; at the
+    // ends it leaves along the side normal (or toward the first bend).
+    const Q = [a, ...P, b];
+    const last = Q.length - 1;
+    const T = Q.map((q, i) => {
+      if (i === 0) return r.da ?? norm(sub(Q[1], q));
+      if (i === last) return r.db ? mul(r.db, -1) : norm(sub(q, Q[last - 1]));
+      return norm(sub(Q[i + 1], Q[i - 1]));
+    });
+    const segs = Q.slice(0, last).map((q, i) => {
+      const l = Math.max(len(sub(Q[i + 1], q)), 1);
+      const c1 = add(q, mul(T[i], l * (i === 0 ? 0.5 : 0.4)));
+      const c2 = sub(Q[i + 1], mul(T[i + 1], l * (i + 1 === last ? 0.5 : 0.4)));
+      return { p0: q, c1, c2, p3: Q[i + 1] };
+    });
+    tanA = norm(sub(segs[0].c1, a));
+    tanB = norm(sub(b, segs[segs.length - 1].c2));
+    const a2 = add(a, mul(tanA, trimA));
+    const b2 = sub(b, mul(tanB, trimB));
+    d = `M ${fmt(a2)}` + segs.map((s, i) => ` C ${fmt(s.c1)} ${fmt(s.c2)} ${fmt(i === segs.length - 1 ? b2 : s.p3)}`).join('');
+    samples = segs.flatMap((s, i) => sampleCurve(s.p0, s.c1, s.c2, s.p3).slice(i === 0 ? 0 : 1));
+    addPoints = segs.map((s, i) => ({ index: i, p: bezier(s.p0, s.c1, s.c2, s.p3, 0.5) }));
   } else if (c.style === 'curved') {
     const k = Math.max(30, len(sub(b, a)) * 0.4);
     const da = r.da ?? norm(sub(b, a));
@@ -289,43 +415,49 @@ export function connectorGeometry(c: Connector, items: ItemMap): ConnectorGeomet
     const c2 = add(b, mul(db, k));
     tanA = norm(sub(c1, a));
     tanB = norm(sub(b, c2));
-    const a2 = c.startArrow === 'arrow' ? add(a, mul(tanA, trim)) : a;
-    const b2 = c.endArrow === 'arrow' ? sub(b, mul(tanB, trim)) : b;
+    const a2 = add(a, mul(tanA, trimA));
+    const b2 = sub(b, mul(tanB, trimB));
     d = `M ${fmt(a2)} C ${fmt(c1)} ${fmt(c2)} ${fmt(b2)}`;
     samples = sampleCurve(a, c1, c2, b);
-    mid = bezier(a, c1, c2, b, 0.5);
+    addPoints = [{ index: 0, p: bezier(a, c1, c2, b, 0.5) }];
   } else {
-    const obstacles = [endpointItem(c.from), endpointItem(c.to)]
-      .map((id) => (id ? items[id] : undefined))
-      .filter((it): it is Item => !!it);
-    const pts = dedupe(c.style === 'elbow' ? elbowPoints(r, obstacles) : [a, b]);
+    let pts: Vec[];
+    if (c.style === 'elbow') {
+      const obstacles = [endpointItem(c.from), endpointItem(c.to)]
+        .map((id) => (id ? items[id] : undefined))
+        .filter((it): it is Item => !!it);
+      const route = elbowPoints(r, obstacles, c.channel ?? null);
+      pts = dedupe(route.pts);
+      channel = route.handle;
+    } else {
+      const Q = [a, ...P, b];
+      pts = dedupe(Q);
+      addPoints = Q.slice(0, -1).map((q, i) => ({ index: i, p: mul(add(q, Q[i + 1]), 0.5) }));
+    }
     if (pts.length < 2) pts.push({ x: a.x + 0.01, y: a.y });
     tanA = norm(sub(pts[1], pts[0]));
     tanB = norm(sub(pts[pts.length - 1], pts[pts.length - 2]));
     samples = pts.flatMap((p, i) => (i === 0 ? [p] : [mul(add(p, pts[i - 1]), 0.5), p]));
-    mid = samples[Math.floor(samples.length / 2)];
     const trimmed = pts.slice();
-    const last = trimmed.length - 1;
-    if (c.endArrow === 'arrow') {
-      const seg = len(sub(trimmed[last], trimmed[last - 1]));
-      trimmed[last] = sub(trimmed[last], mul(tanB, Math.min(trim, seg)));
-    }
-    if (c.startArrow === 'arrow') {
-      const seg = len(sub(trimmed[1], trimmed[0]));
-      trimmed[0] = add(trimmed[0], mul(tanA, Math.min(trim, seg)));
-    }
-    d = roundedPolyline(trimmed, 12);
+    const lastI = trimmed.length - 1;
+    if (trimB) trimmed[lastI] = sub(trimmed[lastI], mul(tanB, Math.min(trimB, len(sub(trimmed[lastI], trimmed[lastI - 1])))));
+    if (trimA) trimmed[0] = add(trimmed[0], mul(tanA, Math.min(trimA, len(sub(trimmed[1], trimmed[0])))));
+    // Elbow corners are rounded; corners at bend points stay sharp, like Miro.
+    d = roundedPolyline(trimmed, c.style === 'elbow' ? 12 : 0);
   }
 
   return {
     a,
     b,
     d,
-    startHead: c.startArrow === 'arrow' ? arrowHead(a, mul(tanA, -1), head) : null,
-    endHead: c.endArrow === 'arrow' ? arrowHead(b, tanB, head) : null,
+    startHead: headShape(c.startArrow, a, mul(tanA, -1), head),
+    endHead: headShape(c.endArrow, b, tanB, head),
     samples,
     bounds: boundsOf(samples.map((p) => ({ x: p.x, y: p.y, w: 0, h: 0 })))!,
-    mid,
+    mid: samples[Math.floor(samples.length / 2)],
+    bendPoints: P,
+    addPoints,
+    channel,
   };
 }
 

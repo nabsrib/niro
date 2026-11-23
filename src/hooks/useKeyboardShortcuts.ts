@@ -3,6 +3,9 @@ import { useBoard } from '../store';
 import type { Tool } from '../types';
 import { exportBoard, pickBoardFile } from '../boardActions';
 import { TOOL_SHORTCUTS } from '../shortcuts';
+import { onPasteEvent, pickImageFiles, requestPaste } from '../images';
+import { toggleEmojiPicker } from '../components/EmojiPicker';
+import { askForLink } from '../links';
 
 const TOOL_KEYS: Record<string, Tool> = Object.fromEntries(
   TOOL_SHORTCUTS.map(({ key, tool }) => [key.toLowerCase(), tool] as const),
@@ -51,6 +54,19 @@ export function useKeyboardShortcuts() {
       }
 
       if (mod) {
+        // Ctrl+Shift+L locks the selected items (or unlocks them if any is locked).
+        if (e.shiftKey && key === 'l') {
+          e.preventDefault();
+          const sel = s.selected.map((id) => s.items[id]).filter(Boolean);
+          if (sel.length) {
+            const unlock = sel.some((it) => it.locked);
+            s.restyleItems(
+              sel.map((it) => it.id),
+              () => ({ locked: unlock ? undefined : true }),
+            );
+          }
+          return;
+        }
         let handled = true;
         switch (key) {
           case 'z':
@@ -74,8 +90,9 @@ export function useKeyboardShortcuts() {
             s.deleteItems(s.selected);
             break;
           case 'v':
-            s.paste();
-            break;
+            // Let the browser's paste event through: it says whether the clipboard holds a picture.
+            requestPaste();
+            return;
           case 's':
             exportBoard();
             break;
@@ -157,6 +174,20 @@ export function useKeyboardShortcuts() {
         s.setPenMode(key === 'e' ? 'eraser' : e.shiftKey ? 'highlighter' : 'pen');
         return;
       }
+      // I adds an image (picks a file).
+      if (key === 'i' && !e.shiftKey && !s.readOnly) {
+        pickImageFiles();
+        return;
+      }
+      // J opens the emoji picker, K adds a link card.
+      if (key === 'j' && !e.shiftKey && !s.readOnly) {
+        toggleEmojiPicker();
+        return;
+      }
+      if (key === 'k' && !e.shiftKey && !s.readOnly) {
+        askForLink();
+        return;
+      }
       if (!e.shiftKey && TOOL_KEYS[key]) s.setTool(TOOL_KEYS[key]);
     };
 
@@ -168,10 +199,12 @@ export function useKeyboardShortcuts() {
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', onBlur);
+    window.addEventListener('paste', onPasteEvent);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
+      window.removeEventListener('paste', onPasteEvent);
     };
   }, []);
 }

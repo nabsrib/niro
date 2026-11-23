@@ -1,11 +1,24 @@
 import { useEffect, useState } from 'react';
 import { useBoard } from '../store';
-import { LABEL_COLORS, LABEL_DEFAULTS, LABEL_SIZES } from '../connectors';
+import { LABEL_COLORS, LABEL_DEFAULTS, LABEL_SIZES, bendsOf } from '../connectors';
 import { deckSlides, isDeck, isFrame } from '../frames';
 import { PALETTE } from '../colors';
-import type { ConnectorStyle } from '../types';
+import { ARROW_HEADS, type ArrowHead, type Connector, type ConnectorStyle, type Item, type LineDash } from '../types';
+
+/** Menu wording for each end shape, at the start and at the end of a line. */
+const HEAD_LABELS: Record<ArrowHead, { start: string; end: string }> = {
+  none: { start: '━ No start', end: '━ No end' },
+  arrow: { start: '◀ Arrow', end: '▶ Arrow' },
+  open: { start: '‹ Open arrow', end: '› Open arrow' },
+  circle: { start: '● Dot', end: '● Dot' },
+  diamond: { start: '◆ Diamond', end: '◆ Diamond' },
+  bar: { start: '┃ Bar', end: '┃ Bar' },
+};
 import { Icons } from './Icons';
 import { TextOptions } from './TextOptions';
+import { ShapeStyle } from './ShapeStyle';
+import { myIdentity } from '../identity';
+import { normalizeUrl, openLink } from '../links';
 import { hasText } from '../textStyle';
 import { tooltip } from '../shortcuts';
 
@@ -39,9 +52,15 @@ export function ContextToolbar({ box, ids, editing = false }: { box: ScreenBox; 
     : selConns[0]?.stroke;
   const connIds = selConns.map((c) => c.id);
   const allStyle = (style: ConnectorStyle) => selConns.length > 0 && selConns.every((c) => c.style === style);
-  const allStart = selConns.length > 0 && selConns.every((c) => c.startArrow === 'arrow');
-  const allEnd = selConns.length > 0 && selConns.every((c) => c.endArrow === 'arrow');
-  const bentIds = selConns.filter((c) => c.style === 'curved' && c.bend).map((c) => c.id);
+  // The value shown in a menu: shared by all selected connectors, or '' when they differ.
+  const common = <T,>(get: (c: Connector) => T): T | '' => {
+    const vals = new Set(selConns.map(get));
+    return vals.size === 1 ? [...vals][0] : '';
+  };
+  const startHead = common((c) => c.startArrow);
+  const endHead = common((c) => c.endArrow);
+  const dash = common((c) => c.dash ?? 'solid');
+  const bentIds = selConns.filter((c) => bendsOf(c).length > 0 || c.channel).map((c) => c.id);
 
   // Label text options apply to every selected connector that has a label.
   const labeled = selConns.filter((c) => c.label);
@@ -64,6 +83,20 @@ export function ContextToolbar({ box, ids, editing = false }: { box: ScreenBox; 
     top: above ? box.top - 14 : box.top + box.height + 14,
     transform: `translate(-50%, ${above ? '-100%' : '0'})`,
   };
+
+  // Locked items: only unlock and duplicate (nothing else may change them).
+  if (!editing && selItems.some((it) => it.locked)) {
+    return (
+      <div className="context-toolbar" style={style} data-ui onPointerDown={(e) => e.stopPropagation()}>
+        <button className="icon-btn icon-btn--active" title={tooltip('Unlock', ['Mod', 'Shift', 'L'])} aria-label="Unlock" onClick={() => toggleLock(selItems)}>
+          <Icons.unlock />
+        </button>
+        <button className="icon-btn" title="Duplicate  Ctrl+D" onClick={() => s.duplicate(ids)}>
+          <Icons.copy />
+        </button>
+      </div>
+    );
+  }
 
   if (editing) {
     return (
@@ -100,30 +133,54 @@ export function ContextToolbar({ box, ids, editing = false }: { box: ScreenBox; 
             </button>
           ))}
           <div className="divider" />
-          <button
-            className={`icon-btn${allStart ? ' icon-btn--active' : ''}`}
-            title="Start arrow"
-            aria-label="Start arrow"
-            aria-pressed={allStart}
-            onClick={() => s.styleConnectors(connIds, { startArrow: allStart ? 'none' : 'arrow' })}
+          <select
+            className="font-size line-select"
+            value={startHead}
+            title="Start of the line"
+            aria-label="Start of the line"
+            onChange={(e) => s.styleConnectors(connIds, { startArrow: e.target.value as ArrowHead })}
           >
-            <Icons.arrowStart />
-          </button>
-          <button
-            className={`icon-btn${allEnd ? ' icon-btn--active' : ''}`}
-            title="End arrow"
-            aria-label="End arrow"
-            aria-pressed={allEnd}
-            onClick={() => s.styleConnectors(connIds, { endArrow: allEnd ? 'none' : 'arrow' })}
+            {startHead === '' && <option value="">Start…</option>}
+            {ARROW_HEADS.map((h) => (
+              <option key={h} value={h}>
+                {HEAD_LABELS[h].start}
+              </option>
+            ))}
+          </select>
+          <select
+            className="font-size line-select"
+            value={endHead}
+            title="End of the line"
+            aria-label="End of the line"
+            onChange={(e) => s.styleConnectors(connIds, { endArrow: e.target.value as ArrowHead })}
           >
-            <Icons.arrowEnd />
-          </button>
+            {endHead === '' && <option value="">End…</option>}
+            {ARROW_HEADS.map((h) => (
+              <option key={h} value={h}>
+                {HEAD_LABELS[h].end}
+              </option>
+            ))}
+          </select>
+          <select
+            className="font-size line-select"
+            value={dash}
+            title="Line pattern"
+            aria-label="Line pattern"
+            onChange={(e) =>
+              s.styleConnectors(connIds, { dash: e.target.value === 'solid' ? null : (e.target.value as LineDash) })
+            }
+          >
+            {dash === '' && <option value="">Pattern…</option>}
+            <option value="solid">━━ Solid</option>
+            <option value="dashed">╍╍ Dashed</option>
+            <option value="dotted">┈┈ Dotted</option>
+          </select>
           {bentIds.length > 0 && (
             <button
               className="icon-btn"
-              title="Reset curve"
-              aria-label="Reset curve"
-              onClick={() => s.styleConnectors(bentIds, { bend: null })}
+              title="Reset line (remove bends)"
+              aria-label="Reset line"
+              onClick={() => s.styleConnectors(bentIds, { bends: null, bend: null, channel: null })}
             >
               <Icons.resetCurve />
             </button>
@@ -251,6 +308,44 @@ export function ContextToolbar({ box, ids, editing = false }: { box: ScreenBox; 
             </>
           )}
           <button
+            className={`icon-btn${singleFrame.clip ? ' icon-btn--active' : ''}`}
+            title={singleFrame.clip ? 'Stop clipping contents' : 'Clip contents (cut off what sticks out)'}
+            aria-label="Clip contents"
+            aria-pressed={!!singleFrame.clip}
+            onClick={() => s.restyleItems([singleFrame.id], (f) => ({ clip: f.clip ? undefined : true }))}
+          >
+            <Icons.crop />
+          </button>
+          <button
+            className={`icon-btn${singleFrame.hiddenBy ? ' icon-btn--active' : ''}`}
+            title={singleFrame.hiddenBy ? 'Reveal to everyone' : 'Hide from others (only you see it)'}
+            aria-label="Hide frame from others"
+            aria-pressed={!!singleFrame.hiddenBy}
+            onClick={() => s.restyleItems([singleFrame.id], (f) => ({ hiddenBy: f.hiddenBy ? undefined : myIdentity() }))}
+          >
+            <Icons.hide />
+          </button>
+          <button
+            className="icon-btn"
+            title="Copy link to this frame"
+            aria-label="Copy link to this frame"
+            onClick={() => copyFrameLink(singleFrame.id)}
+          >
+            <Icons.link />
+          </button>
+          {!isDeck(singleFrame) && (
+            <button
+              className="icon-btn"
+              title="Fit frame to its contents"
+              aria-label="Fit frame to its contents"
+              onClick={() => {
+                if (!s.fitFrameToContent(singleFrame.id)) s.showNotice('This frame is empty, so there is nothing to fit.');
+              }}
+            >
+              <Icons.fit />
+            </button>
+          )}
+          <button
             className="icon-btn"
             title="Export this frame as an image"
             aria-label="Export this frame as an image"
@@ -261,20 +356,67 @@ export function ContextToolbar({ box, ids, editing = false }: { box: ScreenBox; 
           <div className="divider" />
         </>
       )}
+      {/* A link card: open it, change its title or address. */}
+      {selConns.length === 0 && selItems.length === 1 && selItems[0].type === 'link' && (
+        <>
+          <button className="icon-btn" title="Open link in a new tab" aria-label="Open link" onClick={() => openLink(selItems[0].url)}>
+            <Icons.external />
+          </button>
+          <button
+            className="icon-btn"
+            title="Edit title"
+            aria-label="Edit title"
+            onClick={() => {
+              const title = window.prompt('Title of the link card:', selItems[0].text);
+              if (title !== null) s.restyleItems([selItems[0].id], () => ({ text: title.trim().slice(0, 200) }));
+            }}
+          >
+            <Icons.text />
+          </button>
+          <button
+            className="icon-btn"
+            title="Edit web address"
+            aria-label="Edit web address"
+            onClick={() => {
+              const raw = window.prompt('Web address:', selItems[0].url);
+              if (raw === null) return;
+              const url = normalizeUrl(raw);
+              if (url) s.restyleItems([selItems[0].id], () => ({ url }));
+              else s.showNotice('That doesn’t look like a web address (http or https).', 'error');
+            }}
+          >
+            <Icons.link />
+          </button>
+          <div className="divider" />
+        </>
+      )}
       {/* Text options when only stickies, shapes and text are selected. */}
       {selConns.length === 0 && selItems.length > 0 && selItems.every(hasText) && <TextOptions items={selItems} />}
-      <div className="swatches">
-        {PALETTE.map((c) => (
-          <button
-            key={c}
-            className={`swatch${current?.toLowerCase() === c.toLowerCase() ? ' swatch--active' : ''}`}
-            style={{ background: c }}
-            title={c}
-            onClick={() => s.setColor(ids, c)}
-          />
-        ))}
-      </div>
-      <div className="divider" />
+      {/* Shape and border when only rectangles and ellipses are selected. */}
+      {selConns.length === 0 && selItems.length > 0 && selItems.every((it) => it.type === 'rect' || it.type === 'ellipse') && (
+        <>
+          <div className="divider" />
+          <ShapeStyle items={selItems} />
+          <div className="divider" />
+        </>
+      )}
+      {/* Colors don't apply to images (a selection of only images has no palette). */}
+      {!(selConns.length === 0 && selItems.length > 0 && selItems.every((it) => it.type === 'image' || it.type === 'emoji')) && (
+        <>
+          <div className="swatches">
+            {PALETTE.map((c) => (
+              <button
+                key={c}
+                className={`swatch${current?.toLowerCase() === c.toLowerCase() ? ' swatch--active' : ''}`}
+                style={{ background: c }}
+                title={c}
+                onClick={() => s.setColor(ids.filter((id) => items[id]?.type !== 'image'), c)}
+              />
+            ))}
+          </div>
+          <div className="divider" />
+        </>
+      )}
       {selItems.length > 0 && (
         <>
           <button className="icon-btn" title="Bring to front  ]" onClick={() => s.reorder(ids, 'front')}>
@@ -285,6 +427,11 @@ export function ContextToolbar({ box, ids, editing = false }: { box: ScreenBox; 
           </button>
         </>
       )}
+      {selItems.length > 0 && (
+        <button className="icon-btn" title={tooltip('Lock', ['Mod', 'Shift', 'L'])} aria-label="Lock" onClick={() => toggleLock(selItems)}>
+          <Icons.lock />
+        </button>
+      )}
       <button className="icon-btn" title="Duplicate  Ctrl+D" onClick={() => s.duplicate(ids)}>
         <Icons.copy />
       </button>
@@ -292,5 +439,25 @@ export function ContextToolbar({ box, ids, editing = false }: { box: ScreenBox; 
         <Icons.trash />
       </button>
     </div>
+  );
+}
+
+/** Lock the items, or unlock them all if any is locked. One undo step. */
+export function toggleLock(selItems: Item[]) {
+  const unlock = selItems.some((it) => it.locked);
+  useBoard.getState().restyleItems(
+    selItems.map((it) => it.id),
+    () => ({ locked: unlock ? undefined : true }),
+  );
+}
+
+/** Copy a link that opens this board zoomed to the frame (`#board=<id>&frame=<id>`). */
+function copyFrameLink(frameId: string) {
+  const { boardId, showNotice } = useBoard.getState();
+  if (!boardId) return;
+  const url = `${location.origin}${location.pathname}#board=${boardId}&frame=${frameId}`;
+  void navigator.clipboard.writeText(url).then(
+    () => showNotice('Link to this frame copied.'),
+    () => showNotice('Could not copy the link.', 'error'),
   );
 }

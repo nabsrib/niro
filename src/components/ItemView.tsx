@@ -13,10 +13,18 @@ import {
 import { clearStyles, domToRuns, runsToDom, styleAt, styleRange } from '../richEditor';
 import { itemRuns, normalizeRuns, runCss } from '../richText';
 import type { ItemType, RunStyle, TextRun } from '../types';
+import { useAssetUrl } from '../hooks/useAssetUrl';
+import { domainOf } from '../links';
+import { borderColor, borderDash, borderWidth, shapeOf, shapePath, textInset } from '../shapes';
+import { dashArray } from '../connectors';
+
+/** CSS border style for each border pattern. */
+const CSS_DASH = { solid: 'solid', dashed: 'dashed', dotted: 'dotted' } as const;
 
 const PLACEHOLDER: Partial<Record<ItemType, string>> = { text: 'Type something' };
 
-export const ItemView = memo(function ItemView({ id }: { id: string }) {
+/** `clip`: CSS clip-path cutting off the parts outside a clipping frame (frames.ts `clipInsets`). */
+export const ItemView = memo(function ItemView({ id, clip }: { id: string; clip?: string }) {
   const item = useBoard((s) => s.items[id]);
   const editing = useBoard((s) => s.editingId === id);
   const ref = useRef<HTMLDivElement>(null);
@@ -50,7 +58,7 @@ export const ItemView = memo(function ItemView({ id }: { id: string }) {
       <div
         className={`item item--path${item.highlight ? ' item--highlight' : ''}`}
         data-item-id={id}
-        style={{ transform: `translate(${item.x}px, ${item.y}px)`, width: item.w, height: item.h }}
+        style={{ transform: `translate(${item.x}px, ${item.y}px)`, clipPath: clip, width: item.w, height: item.h }}
       >
         <svg width={item.w} height={item.h} className="path__svg">
           <path
@@ -74,7 +82,7 @@ export const ItemView = memo(function ItemView({ id }: { id: string }) {
         className={`item item--frame${item.deck ? ' item--deck' : ''}`}
         data-item-id={id}
         style={{
-          transform: `translate(${item.x}px, ${item.y}px)`,
+          transform: `translate(${item.x}px, ${item.y}px)`, clipPath: clip,
           width: item.w,
           height: item.h,
           background: item.fill,
@@ -91,17 +99,97 @@ export const ItemView = memo(function ItemView({ id }: { id: string }) {
     );
   }
 
+  // Comment threads are drawn as pins in screen space (Comments.tsx).
+  if (item.type === 'comment') return null;
+
+  if (item.type === 'link') {
+    // Link card: the page's title (or its site while unknown), the site, and an open button.
+    const site = domainOf(item.url);
+    return (
+      <div
+        className="item item--link"
+        data-item-id={id}
+        style={{ transform: `translate(${item.x}px, ${item.y}px)`, clipPath: clip, width: item.w, height: item.h, fontSize: item.fontSize }}
+      >
+        <div className="link__body">
+          <div className="link__title">{item.text || site}</div>
+          <div className="link__site">{site}</div>
+        </div>
+        <a
+          className="link__open"
+          href={item.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-ui
+          title={`Open ${item.url}`}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          ↗
+        </a>
+      </div>
+    );
+  }
+
+  if (item.type === 'emoji') {
+    // A big emoji filling its (square) box.
+    return (
+      <div
+        className="item item--emoji"
+        data-item-id={id}
+        style={{
+          transform: `translate(${item.x}px, ${item.y}px)`,
+          clipPath: clip,
+          width: item.w,
+          height: item.h,
+          fontSize: Math.min(item.w, item.h) * 0.8,
+        }}
+      >
+        {item.text}
+      </div>
+    );
+  }
+
+  if (item.type === 'image') {
+    return (
+      <div
+        className="item item--image"
+        data-item-id={id}
+        style={{ transform: `translate(${item.x}px, ${item.y}px)`, clipPath: clip, width: item.w, height: item.h }}
+      >
+        <AssetImage id={item.src} />
+      </div>
+    );
+  }
+
   const isText = item.type === 'text';
+  // Rectangles and ellipses: border color, width and pattern. Shapes other than a
+  // plain rectangle are drawn as an SVG outline behind the text (shapes.ts).
+  const kind = shapeOf(item);
+  const bordered = item.type === 'rect' || item.type === 'ellipse';
+  const svgShape = item.type === 'rect' && kind !== 'rect';
+  const bw = bordered ? borderWidth(item) : 0;
+  const inset = textInset(kind);
   return (
     <div
       ref={ref}
-      className={`item item--${item.type}${editing ? ' item--editing' : ''}`}
+      className={`item item--${item.type}${svgShape ? ' item--shape' : ''}${editing ? ' item--editing' : ''}`}
       data-item-id={id}
       style={{
-        transform: `translate(${item.x}px, ${item.y}px)`,
+        transform: `translate(${item.x}px, ${item.y}px)`, clipPath: clip,
         width: item.w,
         height: isText ? undefined : item.h,
-        background: isText ? 'transparent' : item.fill,
+        background: isText || svgShape ? 'transparent' : item.fill,
+        ...(bordered && !svgShape
+          ? { border: bw > 0 ? `${bw}px ${CSS_DASH[borderDash(item) ?? 'solid']} ${borderColor(item)}` : 'none' }
+          : {}),
+        ...(svgShape
+          ? {
+              paddingLeft: `calc(${inset.x * item.w}px + 0.6em)`,
+              paddingRight: `calc(${inset.x * item.w}px + 0.6em)`,
+              paddingTop: `calc(${inset.y * item.h}px + 0.3em)`,
+              paddingBottom: `calc(${(inset.bottom ?? inset.y) * item.h}px + 0.3em)`,
+            }
+          : {}),
         color: textColor(item),
         fontSize: item.fontSize,
         fontWeight: item.bold ? 700 : undefined,
@@ -111,6 +199,19 @@ export const ItemView = memo(function ItemView({ id }: { id: string }) {
         alignItems: isText ? undefined : FLEX_V[textVAlign(item)],
       }}
     >
+      {svgShape && (
+        <svg className="shape__svg" width={item.w} height={item.h} aria-hidden="true">
+          <path
+            d={shapePath(kind, item.w, item.h, bw / 2)}
+            fill={item.fill}
+            stroke={bw > 0 ? borderColor(item) : 'none'}
+            strokeWidth={bw}
+            strokeDasharray={dashArray(borderDash(item), bw)}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )}
       {editing ? (
         <TextEditor id={id} initial={item.text} runs={itemRuns(item)} placeholder={PLACEHOLDER[item.type]} />
       ) : (
@@ -134,6 +235,13 @@ export const ItemView = memo(function ItemView({ id }: { id: string }) {
  * can style the selected part while typing. Without, it is plain text
  * (connector labels, frame titles).
  */
+/** An image item's picture, or a placeholder while it loads (or if it is missing). */
+function AssetImage({ id }: { id?: string }) {
+  const url = useAssetUrl(id);
+  if (!url) return <div className="image__placeholder">{id ? 'Loading image…' : 'Missing image'}</div>;
+  return <img className="image__img" src={url} alt="" draggable={false} />;
+}
+
 export function TextEditor({
   id,
   initial,

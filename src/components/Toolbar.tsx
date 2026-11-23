@@ -2,10 +2,16 @@ import { useBoard } from '../store';
 import { Icons } from './Icons';
 import { commitActiveEdit } from '../editing';
 import { TOOL_SHORTCUTS, tooltip } from '../shortcuts';
+import { pickImageFiles } from '../images';
+import { ShapeIcon } from './ShapeOptions';
+import { toggleEmojiPicker, useEmojiPicker } from './EmojiPicker';
+import { askForLink } from '../links';
 
 export function Toolbar() {
   const tool = useBoard((s) => s.tool);
   const penMode = useBoard((s) => s.penMode);
+  const shapeKind = useBoard((s) => s.shapeKind);
+  const emojiOpen = useEmojiPicker((s) => s.open);
   const canUndo = useBoard((s) => s.canUndo);
   const canRedo = useBoard((s) => s.canRedo);
   const readOnly = useBoard((s) => s.readOnly);
@@ -32,10 +38,29 @@ export function Toolbar() {
             aria-pressed={tool === t}
             onClick={() => setTool(t)}
           >
-            <Icon />
+            {t === 'rect' && shapeKind !== 'rect' ? <ShapeIcon kind={shapeKind} size={20} /> : <Icon />}
           </button>
         );
       })}
+      {!readOnly && (
+        <>
+          <button className="icon-btn" title={tooltip('Image', ['I'])} aria-label="Image" onClick={pickImageFiles}>
+            <Icons.image />
+          </button>
+          <button
+            className={`icon-btn${emojiOpen ? ' icon-btn--active' : ''}`}
+            title={tooltip('Emoji', ['J'])}
+            aria-label="Emoji"
+            aria-pressed={emojiOpen}
+            onClick={toggleEmojiPicker}
+          >
+            <Icons.emoji />
+          </button>
+          <button className="icon-btn" title={tooltip('Link card', ['K'])} aria-label="Link card" onClick={askForLink}>
+            <Icons.link />
+          </button>
+        </>
+      )}
       {!readOnly && (
         <>
           <div className="divider divider--h" />

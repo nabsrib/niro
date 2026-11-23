@@ -2,6 +2,7 @@ import { useBoard } from './store';
 import { commitActiveEdit } from './editing';
 import { collectExport, contentToSvg, type ExportArea, type Measure } from './exportImage';
 import type { Box } from './types';
+import { assetDataUrls } from './assets';
 
 /** Browser limits for canvas size; bigger PNG exports are scaled down to fit. */
 const MAX_SIDE = 16384;
@@ -144,11 +145,14 @@ export async function runExport(req: ExportRequest): Promise<void> {
             ? 'area'
             : '';
   const name = slug(part ? `${board} ${part}` : board);
+  // Pictures are embedded in the image file as data URLs.
+  const images = await assetDataUrls(content.items.flatMap((it) => (it.type === 'image' && it.src ? [it.src] : [])));
   const svg = contentToSvg(content, s.items, {
     textMode: req.format === 'png' ? 'html' : 'lines',
     measure: measureText,
     background: BACKGROUNDS[req.background],
     pxPerUnit,
+    images,
   });
   try {
     if (req.format === 'svg') {

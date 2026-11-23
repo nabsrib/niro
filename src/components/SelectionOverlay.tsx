@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useBoard } from '../store';
 import { HANDLES, boundsOf, worldToScreen } from '../geometry';
+import { Icons } from './Icons';
 import { SIDES, connectorGeometry, sidePoint } from '../connectors';
 import { OPPOSITE, canQuickCreate, quickCreateBox } from '../quickCreate';
 import type { Box, Camera, Item, Side, Vec } from '../types';
@@ -46,6 +47,7 @@ export function SelectionOverlay() {
   const itemBounds = boundsOf(selItems);
   const allBounds = boundsOf([...selItems, ...geos.map((g) => g.bounds)]);
   const hintItem = hint ? items[hint.itemId] : undefined;
+  const anyLocked = selItems.some((it) => it.locked);
 
   // Frames (containers) and pen strokes get no "drag to connect" dots.
   const single =
@@ -88,11 +90,18 @@ export function SelectionOverlay() {
         selItems.map((it) => <div key={it.id} className="sel-item" style={toScreen(it, camera)} />)}
 
       {itemBounds && (
-        <div className="sel-box" style={toScreen(itemBounds, camera)}>
+        <div className={`sel-box${anyLocked ? ' sel-box--locked' : ''}`} style={toScreen(itemBounds, camera)}>
+          {/* Locked items can't be resized: no handles, a lock badge instead. */}
           {!editingId &&
+            !anyLocked &&
             Object.keys(HANDLES).map((h) => (
               <div key={h} data-handle={h} className={`handle handle--${h}`} />
             ))}
+          {anyLocked && (
+            <span className="sel-lock" title="Locked: unlock it from its toolbar (Ctrl+Shift+L) to move or edit it">
+              <Icons.lock />
+            </span>
+          )}
         </div>
       )}
 
@@ -142,14 +151,49 @@ export function SelectionOverlay() {
           );
         })}
 
-      {singleConn && singleGeo && singleConn.style === 'curved' && !editingId && (() => {
-        const p = worldToScreen(singleGeo.mid, camera);
+      {/* Line bending (like Miro): drag a dot between points to add a bend, drag a
+          bend point to move it, double-click it to remove it. */}
+      {singleConn && singleGeo && singleConn.style !== 'elbow' && !editingId && (
+        <>
+          {singleGeo.addPoints.map(({ index, p }) => {
+            const s = worldToScreen(p, camera);
+            return (
+              <div
+                key={`add-${index}`}
+                className="bend-add"
+                data-bend-add-of={singleConn.id}
+                data-bend-insert={index}
+                title="Drag to bend the line here"
+                style={{ left: s.x, top: s.y }}
+              />
+            );
+          })}
+          {singleGeo.bendPoints.map((p, i) => {
+            const s = worldToScreen(p, camera);
+            return (
+              <div
+                key={`bend-${i}`}
+                className="bend-handle bend-handle--set"
+                data-bend-of={singleConn.id}
+                data-bend-index={i}
+                title="Drag to move this bend · double-click to remove it"
+                style={{ left: s.x, top: s.y }}
+              />
+            );
+          })}
+        </>
+      )}
+      {/* Elbow lines: drag the middle segment sideways; double-click puts it back. */}
+      {singleConn && singleGeo?.channel && !editingId && (() => {
+        const ch = singleGeo.channel;
+        const s = worldToScreen(ch.p, camera);
         return (
           <div
-            className={`bend-handle${singleConn.bend ? ' bend-handle--set' : ''}`}
-            data-bend-of={singleConn.id}
-            title="Drag to shape the curve · double-click to reset"
-            style={{ left: p.x, top: p.y }}
+            className={`channel-handle channel-handle--${ch.axis}${singleConn.channel ? ' channel-handle--set' : ''}`}
+            data-channel-of={singleConn.id}
+            data-channel-axis={ch.axis}
+            title="Drag to move this segment · double-click to reset"
+            style={{ left: s.x, top: s.y }}
           />
         );
       })()}

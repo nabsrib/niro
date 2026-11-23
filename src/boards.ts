@@ -4,7 +4,7 @@ import { loadLegacyBoard, sanitizeBoard } from './persistence';
 import { commitActiveEdit } from './editing';
 import { readBoardFile } from './boardFile';
 import { uid } from './geometry';
-import type { BoardMeta, Camera } from './types';
+import type { BoardMeta, Camera, Item } from './types';
 import {
   createBoardDoc,
   decodeIntoBoardDoc,
@@ -19,6 +19,8 @@ import { bindTabSync } from './collab/tabSync';
 import { connectBoard, noConnection, uploadBoard, usePresence } from './collab/connection';
 import { openAccountDialog, useAccount } from './account';
 import { ApiError, boardsApi, type ServerBoard } from './api';
+import { ensureOnServer, saveDataUrls } from './assets';
+import { glideToBox } from './cameraGlide';
 
 /**
  * Multiple boards. Storage keys (IndexedDB, or localStorage as a fallback):
@@ -80,6 +82,22 @@ const notice = (text: string, kind: 'info' | 'error' = 'info') => useBoard.getSt
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 const hashId = () => /(?:^#|&)board=([^&]+)/.exec(window.location.hash)?.[1];
+/** Frame links (`#board=<id>&frame=<id>`): the frame to zoom to. */
+const frameHash = () => /(?:^#|&)frame=([^&]+)/.exec(window.location.hash)?.[1];
+
+/** A frame from a link, waiting until its board is open and the view has a size. */
+let pendingFrame: string | null = null;
+
+/** Zoom to the frame from a frame link, once it can be shown. */
+function tryFocusFrame() {
+  if (!pendingFrame) return;
+  const s = useBoard.getState();
+  const frame = s.items[pendingFrame];
+  if (!frame || s.viewport.w <= 0) return;
+  pendingFrame = null;
+  s.setSelected([frame.id]);
+  glideToBox(frame, 60);
+}
 const setHash = (id: string) => {
   if (hashId() !== id) history.replaceState(null, '', `#board=${id}`);
 };
@@ -92,6 +110,10 @@ async function saveIndex(boards: BoardMeta[]) {
   await kv.set('boards', boards);
   boardsChannel?.postMessage(boards);
 }
+
+/** Picture file ids used by a board's image items. */
+const imageIds = (items: Record<string, Item> | undefined) =>
+  Object.values(items ?? {}).flatMap((it) => (it.type === 'image' && it.src ? [it.src] : []));
 
 /** Drop a board's data from this browser. */
 async function forget(id: string) {
@@ -154,6 +176,8 @@ async function open(id: string, boards: BoardMeta[]) {
   const camera = (await kv.get<Camera>(cameraKey(id))) ?? oldCamera;
   const data = sanitizeBoard({ ...readBoard(bd), camera });
   useBoard.setState(meta?.role === 'viewer' ? { readOnly: true, tool: 'select' } : { readOnly: false });
+  const linkedFrame = frameHash();
+  if (linkedFrame) pendingFrame = linkedFrame;
   useBoard.getState().loadBoardData(data, id, boards);
   const unbind = bindBoard(bd);
   // Every change saves, also those from other tabs: whichever tab closes first,
@@ -165,7 +189,11 @@ async function open(id: string, boards: BoardMeta[]) {
   bd.doc.on('update', onUpdate);
   const stopTabs = bindTabSync(id, bd);
   let stopServer = () => {};
-  if (meta?.role) stopServer = connectBoard(id, bd);
+  if (meta?.role) {
+    stopServer = connectBoard(id, bd);
+    // Pictures added here while offline, or before the board moved to the server.
+    if (meta.role !== 'viewer') void ensureOnServer(imageIds(data?.items));
+  }
   else noConnection();
   current = {
     id,
@@ -180,6 +208,7 @@ async function open(id: string, boards: BoardMeta[]) {
   };
   if (fresh) onUpdate();
   setHash(id);
+  tryFocusFrame();
   await kv.set('current', id);
 }
 
@@ -216,9 +245,20 @@ export async function initBoards(): Promise<void> {
   const id = [fromLink, last].find((x) => x && boards.some((b) => b.id === x)) ?? boards[0].id;
   await open(id, boards);
   startAutosave();
+  // A frame from a link shows once the view has a size and the frame has arrived (shared boards sync in).
+  useBoard.subscribe((st, prev) => {
+    if (pendingFrame && (st.viewport !== prev.viewport || st.items !== prev.items)) tryFocusFrame();
+  });
   // Editing the URL hash by hand (or back/forward, or pasting a shared link) switches boards.
   window.addEventListener('hashchange', () => {
     const target = hashId();
+    // A frame link to the open board: just zoom to the frame.
+    if (target && target === useBoard.getState().boardId && frameHash()) {
+      pendingFrame = frameHash()!;
+      tryFocusFrame();
+      setHash(target);
+      return;
+    }
     if (target && target !== useBoard.getState().boardId) void openLink(target);
   });
   watchAccount();
@@ -289,6 +329,18 @@ function startAutosave() {
     cameraDirty = true;
     scheduleSave();
   });
+  // New image items on a board kept with an account (pasted, duplicated, imported,
+  // undone back): make sure the server has their pictures. Items only come and go
+  // with an `order` change, so other changes cost nothing here.
+  useBoard.subscribe((s, prev) => {
+    if (s.order === prev.order || s.boardId !== prev.boardId || s.readOnly) return;
+    if (!s.boards.find((b) => b.id === s.boardId)?.role) return;
+    const fresh = s.order.flatMap((id) => {
+      const it = s.items[id];
+      return it?.type === 'image' && it.src && !prev.items[id] ? [it.src] : [];
+    });
+    if (fresh.length) void ensureOnServer(fresh);
+  });
   // Don't lose the last change when the tab is closed or hidden.
   const onHide = () => void flushSave();
   window.addEventListener('pagehide', onHide);
@@ -310,6 +362,7 @@ function watchAccount() {
     if (a.status !== prev.status || a.user?.id !== prev.user?.id) void onAccountChanged();
   });
   void onAccountChanged();
+  watchLocalEdits();
   // Pick up boards shared with you, renames and removals made elsewhere.
   window.addEventListener('focus', () => {
     if (Date.now() - lastRefresh > 10_000) void refreshBoards();
@@ -379,6 +432,16 @@ async function syncAccountBoards(offerMove: boolean) {
     ...list.map((b) => fromServer(b, user.id)),
     ...s.boards.filter((b) => !b.role && !serverIds.has(b.id)),
   ];
+  // Right after signing in: empty boards that are only in this browser (like the
+  // starter "My board") are dropped, so they don't sit next to the account's boards.
+  if (offerMove && !user.guest) {
+    const kept: BoardMeta[] = [];
+    for (const b of next) {
+      if (!b.role && (await isEmptyBoard(b.id))) await forget(b.id);
+      else kept.push(b);
+    }
+    next = kept;
+  }
   if (!next.length) next = [await newBoardMeta('My board', [])];
   const openBefore = s.boards.find((b) => b.id === s.boardId);
   const openNow = next.find((b) => b.id === s.boardId);
@@ -397,6 +460,56 @@ async function syncAccountBoards(offerMove: boolean) {
       await moveLocalBoards(local.map((b) => b.id));
     }
   }
+}
+
+/** Whether a board has nothing on it (no items, no connectors). */
+async function isEmptyBoard(id: string): Promise<boolean> {
+  const s = useBoard.getState();
+  if (id === s.boardId) return !s.order.length && !Object.keys(s.connectors).length;
+  const { bd } = await loadDoc(id);
+  const content = readBoard(bd);
+  bd.doc.destroy();
+  return !content.order.length && !Object.keys(content.connectors).length;
+}
+
+// ---------- saving browser boards into the account as you work ----------
+
+/** Wait this long after the last change (and for drags / typing to end) before moving the board. */
+const AUTO_MOVE_DELAY = 1200;
+let autoMoveTimer: number | undefined;
+let autoMoving = false;
+/** After a failed move, wait before trying again (and before saying so again). */
+let autoMoveBlockedUntil = 0;
+
+/**
+ * Signed in with an account and working on a board that is only in this
+ * browser: move it into the account once you pause, so it is saved there.
+ */
+function watchLocalEdits() {
+  useBoard.subscribe((s, prev) => {
+    if (s.boardId !== prev.boardId) return; // a board was just opened
+    if (s.items === prev.items && s.connectors === prev.connectors) return;
+    const user = signedInUser();
+    if (!user || user.guest) return;
+    const meta = s.boards.find((b) => b.id === s.boardId);
+    if (meta && !meta.role) scheduleAutoMove(meta.id);
+  });
+}
+
+function scheduleAutoMove(id: string) {
+  window.clearTimeout(autoMoveTimer);
+  autoMoveTimer = window.setTimeout(async () => {
+    const s = useBoard.getState();
+    if (s.boardId !== id || autoMoving || Date.now() < autoMoveBlockedUntil) return;
+    // Never interrupt a drag or typing: moving reopens the board.
+    if (s.interacting || s.editingId) return scheduleAutoMove(id);
+    autoMoving = true;
+    try {
+      if (!(await moveLocalBoards([id], true))) autoMoveBlockedUntil = Date.now() + 60_000;
+    } finally {
+      autoMoving = false;
+    }
+  }, AUTO_MOVE_DELAY);
 }
 
 /** Signed out: remove the account's boards from this browser (they stay on the server). */
@@ -418,12 +531,13 @@ async function dropServerBoards() {
  * Move boards from this browser into your account: each is created on the server
  * (same id) and its content sent. The open one reconnects.
  */
-export async function moveLocalBoards(ids: string[]) {
+export async function moveLocalBoards(ids: string[], auto = false): Promise<boolean> {
   const user = signedInUser();
   if (!user || user.guest) {
+    if (auto) return false;
     if (user?.guest) notice('Guests can’t keep boards on the server. Create an account to move boards into it.');
     openAccountDialog(user?.guest ? 'sign-up' : 'sign-in');
-    return;
+    return false;
   }
   commitActiveEdit();
   await flushSave();
@@ -444,14 +558,20 @@ export async function moveLocalBoards(ids: string[]) {
       // Not open: send its content now. If that fails, it goes up the next time it's opened.
       const { bd } = await loadDoc(id);
       await uploadBoard(id, bd.doc);
+      await ensureOnServer(imageIds(readBoard(bd).items));
       bd.doc.destroy();
     }
     await saveIndex(useBoard.getState().boards.map((b) => (b.id === id ? fromServer(srv, user.id) : b)));
     moved++;
   }
   if (openId && ids.includes(openId) && useBoard.getState().boards.find((b) => b.id === openId)?.role) await reopen(openId);
-  if (failed.length) notice(`Could not move ${failed.join(', ')}.`, 'error');
-  else if (moved) notice(`Moved ${moved} board(s) into your account.`);
+  if (failed.length) {
+    notice(auto ? `Could not save ${failed.join(', ')} to your account yet; it stays in this browser.` : `Could not move ${failed.join(', ')}.`, 'error');
+  } else if (moved) {
+    const name = useBoard.getState().boards.find((b) => b.id === ids[0])?.name ?? 'the board';
+    notice(auto ? `Saved "${name}" to your account.` : `Moved ${moved} board(s) into your account.`);
+  }
+  return moved > 0 && !failed.length;
 }
 
 /**
@@ -601,6 +721,7 @@ export async function importAsNewBoard(file: File) {
     s.showNotice(`Could not import "${file.name}": ${(err as Error).message}`, 'error');
     return;
   }
+  await saveDataUrls(content.assets);
   await createBoard(file.name.replace(/\.json$/i, ''));
   // The new board's document is bound to the store, so this content is written into it.
   const st = useBoard.getState();

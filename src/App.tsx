@@ -3,6 +3,10 @@ import { BoardMenu } from './components/BoardMenu';
 import { Notice } from './components/Notice';
 import { PenOptions } from './components/PenOptions';
 import { FrameOptions } from './components/FrameOptions';
+import { ShapeOptions } from './components/ShapeOptions';
+import { EmojiPicker } from './components/EmojiPicker';
+import { Comments } from './components/Comments';
+import { FramesPanel } from './components/FramesPanel';
 import { PresentButton, Presenter } from './components/Presenter';
 import { Cursors, FollowBanner, PeerSelections, PeopleBar } from './components/Presence';
 import { AccountButton, AccountDialog } from './components/Account';
@@ -23,6 +27,7 @@ export default function App() {
   return (
     <div className="app">
       <Canvas />
+      <Comments />
       <PeerSelections />
       <Cursors />
       <FollowBanner />
@@ -35,6 +40,9 @@ export default function App() {
           <Toolbar />
           <PenOptions />
           <FrameOptions />
+          <ShapeOptions />
+          <EmojiPicker />
+          <FramesPanel />
           <div className="top-right">
             <PeopleBar />
             <PresentButton />

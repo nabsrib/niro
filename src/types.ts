@@ -7,7 +7,31 @@ export type Box = { x: number; y: number; w: number; h: number };
  */
 export type Camera = { x: number; y: number; z: number };
 
-export type ItemType = 'sticky' | 'rect' | 'ellipse' | 'text' | 'frame' | 'path';
+export type ItemType = 'sticky' | 'rect' | 'ellipse' | 'text' | 'frame' | 'path' | 'image' | 'emoji' | 'link' | 'comment';
+
+/** One message in a comment thread. */
+export interface CommentMessage {
+  id: string;
+  /** Who wrote it: their identity (account id or this browser's id) and name at the time. */
+  author: string;
+  authorName: string;
+  text: string;
+  /** When it was written (ms since 1970). */
+  at: number;
+}
+
+/** Shapes a rectangle item can take (shapes.ts). */
+export type ShapeKind =
+  | 'rect'
+  | 'round'
+  | 'triangle'
+  | 'diamond'
+  | 'parallelogram'
+  | 'hexagon'
+  | 'star'
+  | 'arrow'
+  | 'cylinder'
+  | 'bubble';
 
 /** Style a part of an item's text can override (absent = the item's own style). */
 export interface RunStyle {
@@ -65,6 +89,37 @@ export interface Item extends Box {
   skipSlide?: boolean;
   /** Frames only: a slide deck, whose child frames are laid out in a row as slides. */
   deck?: boolean;
+  /**
+   * Locked: can be selected, copied and connected to, but not moved, resized,
+   * edited or deleted. A locked frame stays put; what is inside it stays editable.
+   */
+  locked?: boolean;
+  /** Frames only: cut off the parts of items that stick out of the frame. */
+  clip?: boolean;
+  /**
+   * Frames only: hidden from everyone except the person who hid it (`hiddenBy`,
+   * their identity: account id or this browser's id), who sees it dimmed.
+   */
+  hiddenBy?: string;
+  /** Link cards only: the web address. */
+  url?: string;
+  /** Comment pins only: the messages, oldest first. */
+  thread?: CommentMessage[];
+  /** Comment pins only: marked resolved (shown faded). */
+  resolved?: boolean;
+  /** Rectangles only: the shape drawn (shapes.ts); absent = plain rectangle. */
+  shape?: ShapeKind;
+  /** Rectangles and ellipses: border color; absent = BORDER_DEFAULTS.color. */
+  border?: string;
+  /** Rectangles and ellipses: border width (0 = no border); absent = BORDER_DEFAULTS.width. */
+  borderWidth?: number;
+  /** Rectangles and ellipses: dashed or dotted border; absent = solid. */
+  borderDash?: LineDash;
+  /**
+   * Images only: id of the picture file (assets.ts). The file itself is kept in
+   * the browser and, for boards on the server, uploaded there; never in the board.
+   */
+  src?: string;
 }
 
 /** What someone may do on a board kept with an account. */
@@ -113,7 +168,17 @@ export type ConnectorStyle = 'straight' | 'elbow' | 'curved';
  * curve's shape when the connected items move.
  */
 export type Bend = { along: number; offset: number };
-export type ArrowHead = 'none' | 'arrow';
+/** End of a connector: nothing, a filled arrow, an open arrow, a dot, a diamond or a bar. */
+export type ArrowHead = 'none' | 'arrow' | 'open' | 'circle' | 'diamond' | 'bar';
+export const ARROW_HEADS: ArrowHead[] = ['none', 'arrow', 'open', 'circle', 'diamond', 'bar'];
+/** Line pattern (absent = solid). */
+export type LineDash = 'dashed' | 'dotted';
+/**
+ * Hand-placed middle segment of an elbow connector: a vertical run (`axis: 'x'`)
+ * or a horizontal run (`axis: 'y'`), `offset` world units from the point halfway
+ * between the ends, so it keeps its place relative to them when items move.
+ */
+export type ElbowChannel = { axis: 'x' | 'y'; offset: number };
 
 export interface Connector {
   id: string;
@@ -124,8 +189,18 @@ export interface Connector {
   strokeWidth: number;
   startArrow: ArrowHead;
   endArrow: ArrowHead;
-  /** User-controlled curve shape (curved style only); absent = automatic curve. */
+  /**
+   * Bend points the line passes through, in order (straight: sharp corners,
+   * curved: a smooth curve through them); absent or empty = none. Elbow lines
+   * use `channel` instead.
+   */
+  bends?: Bend[] | null;
+  /** Older saves: a single curve bend (read as `bends: [bend]`, see `bendsOf`). */
   bend?: Bend | null;
+  /** Elbow lines: hand-placed middle segment; absent = automatic route. */
+  channel?: ElbowChannel | null;
+  /** Dashed or dotted line; absent = solid. */
+  dash?: LineDash | null;
   /** Text shown on the line; absent or empty = no label. */
   label?: string;
   /** Where the label sits, as a fraction of the line's length from start (0) to end (1); absent = middle. */
@@ -140,9 +215,9 @@ export interface Connector {
 export type PenMode = 'pen' | 'highlighter' | 'eraser';
 
 /** Pen strokes ('path' items) are drawn with the pen tool, not placed directly. */
-export type Tool = 'select' | 'hand' | 'connector' | 'pen' | CreationTool;
+export type Tool = 'select' | 'hand' | 'connector' | 'pen' | 'comment' | CreationTool;
 
-export type CreationTool = Exclude<ItemType, 'path'>;
+export type CreationTool = Exclude<ItemType, 'path' | 'image' | 'emoji' | 'link' | 'comment'>;
 
 export const CREATION_TOOLS: CreationTool[] = ['sticky', 'text', 'rect', 'ellipse', 'frame'];
 
