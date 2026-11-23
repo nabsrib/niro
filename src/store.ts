@@ -829,7 +829,7 @@ export const useBoard = create<BoardState>()((set, get) => ({
  * Gather `ids` for copying. Connectors running between two copied items come
  * along automatically; ends attached to items that are not copied become free points.
  */
-function collect(s: BoardState, sel: string[]): Clip {
+export function collect(s: BoardState, sel: string[]): Clip {
   // Copying a frame copies what is inside it too.
   const ids = withFrameChildren(sel, s.items, s.order);
   const idSet = new Set(ids);

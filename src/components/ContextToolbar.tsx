@@ -21,6 +21,7 @@ import { myIdentity } from '../identity';
 import { normalizeUrl, openLink } from '../links';
 import { hasText } from '../textStyle';
 import { tooltip } from '../shortcuts';
+import { saveSelectionAsTemplate } from '../templateActions';
 
 type ScreenBox = { left: number; top: number; width: number; height: number };
 
@@ -430,6 +431,16 @@ export function ContextToolbar({ box, ids, editing = false }: { box: ScreenBox; 
       {selItems.length > 0 && (
         <button className="icon-btn" title={tooltip('Lock', ['Mod', 'Shift', 'L'])} aria-label="Lock" onClick={() => toggleLock(selItems)}>
           <Icons.lock />
+        </button>
+      )}
+      {selItems.length > 0 && (
+        <button
+          className="icon-btn"
+          title="Save as template"
+          aria-label="Save as template"
+          onClick={() => void saveSelectionAsTemplate()}
+        >
+          <Icons.saveTemplate />
         </button>
       )}
       <button className="icon-btn" title="Duplicate  Ctrl+D" onClick={() => s.duplicate(ids)}>

@@ -6,12 +6,14 @@ import { pickImageFiles } from '../images';
 import { ShapeIcon } from './ShapeOptions';
 import { toggleEmojiPicker, useEmojiPicker } from './EmojiPicker';
 import { askForLink } from '../links';
+import { toggleTemplates, useTemplatesDialog } from './TemplatesDialog';
 
 export function Toolbar() {
   const tool = useBoard((s) => s.tool);
   const penMode = useBoard((s) => s.penMode);
   const shapeKind = useBoard((s) => s.shapeKind);
   const emojiOpen = useEmojiPicker((s) => s.open);
+  const templatesOpen = useTemplatesDialog((s) => s.open);
   const canUndo = useBoard((s) => s.canUndo);
   const canRedo = useBoard((s) => s.canRedo);
   const readOnly = useBoard((s) => s.readOnly);
@@ -58,6 +60,15 @@ export function Toolbar() {
           </button>
           <button className="icon-btn" title={tooltip('Link card', ['K'])} aria-label="Link card" onClick={askForLink}>
             <Icons.link />
+          </button>
+          <button
+            className={`icon-btn${templatesOpen ? ' icon-btn--active' : ''}`}
+            title={tooltip('Templates', ['Shift', 'T'])}
+            aria-label="Templates"
+            aria-pressed={templatesOpen}
+            onClick={toggleTemplates}
+          >
+            <Icons.template />
           </button>
         </>
       )}

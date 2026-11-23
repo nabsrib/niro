@@ -2457,6 +2457,180 @@ button {
   filter: brightness(1.08);
 }
 
+/* ---------- templates gallery ---------- */
+
+.templates-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(920px, 100%);
+  height: min(640px, calc(100vh - 32px));
+  background: var(--panel);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  overflow: hidden;
+}
+
+.templates-dialog .export-dialog__header {
+  margin-bottom: 0;
+}
+
+.templates-dialog__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.templates-dialog__nav {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 2px;
+  width: 190px;
+  padding: 10px 8px;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.templates-dialog__nav button {
+  height: 32px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.templates-dialog__nav button:hover {
+  background: #f0f0f4;
+}
+
+.templates-dialog__nav button.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.templates-dialog__main {
+  flex: 1;
+  min-width: 0;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.templates-dialog__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.templates-dialog__help {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.templates-dialog__empty {
+  margin: 24px 0;
+  text-align: center;
+  color: var(--muted);
+}
+
+.templates-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+.template-card {
+  position: relative;
+}
+
+.template-card__pick {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 8px 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.template-card__pick:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.template-card__thumb {
+  display: grid;
+  place-items: center;
+  height: 130px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.template-card__thumb img {
+  max-width: calc(100% - 16px);
+  max-height: calc(100% - 16px);
+  pointer-events: none;
+}
+
+.template-card__name {
+  font-weight: 600;
+}
+
+.template-card__desc {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.template-card__actions {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: none;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.template-card:hover .template-card__actions,
+.template-card:focus-within .template-card__actions {
+  display: flex;
+}
+
+@media (max-width: 600px) {
+  .templates-dialog__body {
+    flex-direction: column;
+  }
+  .templates-dialog__nav {
+    flex-direction: row;
+    width: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+  }
+  .templates-dialog__nav button {
+    flex: none;
+  }
+  .templates-dialog__nav .menu__divider {
+    display: none;
+  }
+}
+
 /* ---------- boards menu ---------- */
 
 .brand__board {

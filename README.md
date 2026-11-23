@@ -67,8 +67,9 @@ no account needed), and a small optional server adds what makes a whiteboard a t
 - **Infinite canvas**: wheel to pan, Ctrl/Cmd + wheel or pinch to zoom (5%–800%), right-drag (like Miro),
   Space + drag, middle mouse or the Hand tool to pan; a dotted grid that adapts to the zoom.
 - **Items**: sticky notes, text, rectangles and ellipses (click to place, or drag to size).
-- **Shapes** (like Miro): the Rectangle tool (R) opens a shapes flyout: rectangle, rounded rectangle, triangle,
-  diamond, parallelogram, hexagon, star, arrow, cylinder and speech bubble, all with text inside. Change a
+- **Shapes** (like Miro): the Rectangle tool (R) opens a shapes flyout: rectangle, rounded rectangle, pill,
+  triangle, diamond, parallelogram, hexagon, star, arrow, cylinder, document and speech bubble, all with text
+  inside (pill, diamond, parallelogram, document and cylinder are the flowchart shapes). Change a
   shape later from its toolbar. Connectors meet a shape's real outline (a diamond's corners, a triangle's sides).
 - **Borders** on rectangles, shapes and ellipses: color, width (or none) and pattern (solid, dashed, dotted).
 - **Emoji** (J or the toolbar): pick from reactions, status signs, things and arrows; placed in the middle of
@@ -78,6 +79,11 @@ no account needed), and a small optional server adds what makes a whiteboard a t
 - **Comments** (C): click the board to start a thread; a pin marks it. Click a pin to read and reply
   (Ctrl+Enter), resolve / reopen or delete; drag a pin to move it. Pins keep their size at any zoom and move
   with their frame. Viewers can read comments.
+- **Templates** (toolbar, Shift+T or the niro menu): a gallery of ready-made layouts: flowchart, swimlane
+  flowchart, org chart, mind map, kanban, timeline, retrospective, daily stand-up, brainstorm, SWOT, priority
+  matrix and customer journey map. Click one to add it to the middle of the view (selected, one undo step).
+  **My templates**: select items and use "Save as template" in their toolbar; saved in this browser, with
+  rename and delete in the gallery.
 - **Lock** (toolbar or Ctrl+Shift+L): locked items can be selected, copied and connected to, but not moved,
   resized, edited or deleted. A locked frame stays put while what is inside stays editable.
 - **Images**: paste a picture (Ctrl+V), drop image files on the board, or use the Image button (I). PNG, JPEG,
@@ -246,6 +252,7 @@ phone ──Wi-Fi──► your computer :5173 (Vite: the app)
 | Shift+P / E | Highlighter / Eraser |
 | I | Add an image (pick a file); Ctrl+V pastes a copied picture |
 | J / K / C | Emoji / link card (Ctrl+V pastes a web address as one) / comment |
+| Shift+T | Templates gallery |
 | Ctrl+Shift+L | Lock / unlock the selection |
 | Right-drag, middle-drag, Space + drag | Pan |
 | Double-click a sticky, shape or text | Edit its text |
@@ -338,6 +345,9 @@ niro/
 - `src/shapes.ts`: shape outlines (paths, polygons, text room, where a line meets the outline), border defaults
 - `src/components/ShapeOptions.tsx`: shapes flyout of the Rectangle tool; `ShapeStyle.tsx`: shape and border controls
 - `src/components/FramesPanel.tsx`: frames panel with thumbnails
+- `src/templates.ts`: built-in templates (a small builder plus each layout, pure)
+- `src/templateActions.ts`: adding a template to the board, My templates (save the selection, rename, delete)
+- `src/components/TemplatesDialog.tsx`: templates gallery with thumbnails
 - `src/emoji.ts`, `src/components/EmojiPicker.tsx`: emoji list, placing, picker
 - `src/links.ts`: link cards (addresses, adding, title lookup); `server/links.mjs`: `/api/link-preview` (public addresses only)
 - `src/components/Comments.tsx`: comment pins and threads
@@ -402,6 +412,8 @@ niro/
 - [x] Images (paste, drop, button), bending lines, line patterns and end shapes
 - [x] More shapes, borders, frame background and fit to contents, frames panel
 - [x] Emoji, link cards, comments, lock, clip / hide frames, frame links, bend snapping
+- [x] Templates gallery (diagrams, planning, meetings, strategy), My templates, flowchart shapes
+- [ ] More diagram kits: UML class / ER diagrams, mind map with automatic layout, sequence diagrams, tables
 - [ ] Boards dashboard with thumbnails
 - [ ] Typing together in one item (letter-by-letter merging)
 

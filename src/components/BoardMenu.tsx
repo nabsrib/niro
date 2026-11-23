@@ -12,6 +12,7 @@ import {
 } from '../boards';
 import { useAccount } from '../account';
 import { toggleFramesPanel, useFramesPanel } from './FramesPanel';
+import { toggleTemplates } from './TemplatesDialog';
 import { Icons } from './Icons';
 import { useBoard } from '../store';
 import { comboText } from '../shortcuts';
@@ -31,6 +32,7 @@ export function BoardMenu() {
   const signedIn = useAccount((s) => s.user !== null);
   const framesOpen = useFramesPanel((s) => s.open);
   const guest = useAccount((s) => !!s.user?.guest);
+  const readOnly = useBoard((s) => s.readOnly);
 
   // Opening the menu picks up boards shared with you and renames made elsewhere.
   useEffect(() => {
@@ -185,6 +187,13 @@ export function BoardMenu() {
             </button>
           )}
           <div className="menu__divider" />
+          {!readOnly && (
+            <button role="menuitem" className="menu__item" onClick={run(toggleTemplates)}>
+              <Icons.template />
+              <span>Templates…</span>
+              <kbd>{comboText(['Shift', 'T'])}</kbd>
+            </button>
+          )}
           <button role="menuitem" className="menu__item" onClick={run(exportBoard)}>
             <Icons.download />
             <span>Export as JSON</span>

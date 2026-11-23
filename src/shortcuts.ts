@@ -43,6 +43,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { label: 'Add an image (or paste / drop one)', combos: [['I']] },
       { label: 'Emoji', combos: [['J']] },
       { label: 'Link card (or paste a web address)', combos: [['K']] },
+      { label: 'Templates', combos: [['Shift', 'T']] },
     ],
   },
   {

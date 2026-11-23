@@ -155,6 +155,19 @@ export const Icons = {
       <path d="M21 16l-5-5-9 9" />
     </Svg>
   ),
+  template: () => (
+    <Svg>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M3 9h18M9 9v12" />
+    </Svg>
+  ),
+  saveTemplate: () => (
+    <Svg>
+      <rect x="3" y="3" width="13" height="13" rx="2" />
+      <path d="M3 8h13M8 8v8" />
+      <path d="M19 14v7M15.5 17.5h7" />
+    </Svg>
+  ),
   grid: () => (
     <Svg>
       <rect x="4" y="4" width="7" height="7" rx="1" />

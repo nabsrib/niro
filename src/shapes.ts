@@ -9,6 +9,7 @@ import type { Item, LineDash, ShapeKind, Vec } from './types';
 export const SHAPES: { kind: ShapeKind; label: string }[] = [
   { kind: 'rect', label: 'Rectangle' },
   { kind: 'round', label: 'Rounded rectangle' },
+  { kind: 'pill', label: 'Pill (start / end)' },
   { kind: 'triangle', label: 'Triangle' },
   { kind: 'diamond', label: 'Diamond' },
   { kind: 'parallelogram', label: 'Parallelogram' },
@@ -16,6 +17,7 @@ export const SHAPES: { kind: ShapeKind; label: string }[] = [
   { kind: 'star', label: 'Star' },
   { kind: 'arrow', label: 'Arrow' },
   { kind: 'cylinder', label: 'Cylinder' },
+  { kind: 'document', label: 'Document' },
   { kind: 'bubble', label: 'Speech bubble' },
 ];
 export const SHAPE_KINDS = SHAPES.map((s) => s.kind);
@@ -96,6 +98,22 @@ export function shapePath(kind: ShapeKind, w: number, h: number, inset = 0): str
         `A ${r(rr)} ${r(rr)} 0 0 1 ${r(o)} ${r(o + H - rr)} V ${r(o + rr)} A ${r(rr)} ${r(rr)} 0 0 1 ${r(o + rr)} ${r(o)} Z`
       );
     }
+    case 'pill': {
+      // Fully rounded ends: the flowchart start / end shape.
+      const rr = Math.min(W, H) / 2;
+      return (
+        `M ${r(o + rr)} ${r(o)} H ${r(o + W - rr)} A ${r(rr)} ${r(rr)} 0 0 1 ${r(o + W - rr)} ${r(o + H)} ` +
+        `H ${r(o + rr)} A ${r(rr)} ${r(rr)} 0 0 1 ${r(o + rr)} ${r(o)} Z`
+      );
+    }
+    case 'document': {
+      // A sheet with a wavy bottom edge: up on the right half, down on the left.
+      const a = H * 0.1;
+      return (
+        `M ${r(o)} ${r(o)} H ${r(o + W)} V ${r(o + H - a)} ` +
+        `Q ${r(o + W * 0.75)} ${r(o + H - a * 3)} ${r(o + W / 2)} ${r(o + H - a)} T ${r(o)} ${r(o + H - a)} Z`
+      );
+    }
     case 'cylinder': {
       // Body with a curved bottom, plus the top ellipse drawn in full.
       const ry = Math.min(H * 0.15, W * 0.25);
@@ -138,6 +156,10 @@ export function textInset(kind: ShapeKind): { x: number; y: number; bottom?: num
       return { x: 0.05, y: 0.25 };
     case 'cylinder':
       return { x: 0.06, y: 0.2 };
+    case 'pill':
+      return { x: 0.12, y: 0 };
+    case 'document':
+      return { x: 0.04, y: 0.04, bottom: 0.16 };
     case 'bubble':
       return { x: 0.06, y: 0.04, bottom: 0.22 };
     default:
@@ -177,5 +199,7 @@ export const SHAPE_SIZES: Partial<Record<ShapeKind, { w: number; h: number }>> =
   star: { w: 180, h: 170 },
   arrow: { w: 220, h: 120 },
   cylinder: { w: 140, h: 170 },
+  pill: { w: 200, h: 80 },
+  document: { w: 180, h: 130 },
   bubble: { w: 220, h: 150 },
 };

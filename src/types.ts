@@ -24,6 +24,7 @@ export interface CommentMessage {
 export type ShapeKind =
   | 'rect'
   | 'round'
+  | 'pill'
   | 'triangle'
   | 'diamond'
   | 'parallelogram'
@@ -31,6 +32,7 @@ export type ShapeKind =
   | 'star'
   | 'arrow'
   | 'cylinder'
+  | 'document'
   | 'bubble';
 
 /** Style a part of an item's text can override (absent = the item's own style). */

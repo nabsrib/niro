@@ -6,6 +6,7 @@ import { TOOL_SHORTCUTS } from '../shortcuts';
 import { onPasteEvent, pickImageFiles, requestPaste } from '../images';
 import { toggleEmojiPicker } from '../components/EmojiPicker';
 import { askForLink } from '../links';
+import { toggleTemplates } from '../components/TemplatesDialog';
 
 const TOOL_KEYS: Record<string, Tool> = Object.fromEntries(
   TOOL_SHORTCUTS.map(({ key, tool }) => [key.toLowerCase(), tool] as const),
@@ -186,6 +187,11 @@ export function useKeyboardShortcuts() {
       }
       if (key === 'k' && !e.shiftKey && !s.readOnly) {
         askForLink();
+        return;
+      }
+      // Shift+T opens the templates gallery.
+      if (key === 't' && e.shiftKey && !s.readOnly) {
+        toggleTemplates();
         return;
       }
       if (!e.shiftKey && TOOL_KEYS[key]) s.setTool(TOOL_KEYS[key]);
