@@ -3,7 +3,7 @@ import { useBoard } from '../store';
 import { LABEL_COLORS, LABEL_DEFAULTS, LABEL_SIZES, bendsOf } from '../connectors';
 import { deckSlides, isDeck, isFrame } from '../frames';
 import { PALETTE } from '../colors';
-import { ARROW_HEADS, type ArrowHead, type Connector, type ConnectorStyle, type Item, type LineDash } from '../types';
+import { type ArrowHead, type Connector, type ConnectorStyle, type Item, type LineDash } from '../types';
 
 /** Menu wording for each end shape, at the start and at the end of a line. */
 const HEAD_LABELS: Record<ArrowHead, { start: string; end: string }> = {
@@ -13,7 +13,21 @@ const HEAD_LABELS: Record<ArrowHead, { start: string; end: string }> = {
   circle: { start: '● Dot', end: '● Dot' },
   diamond: { start: '◆ Diamond', end: '◆ Diamond' },
   bar: { start: '┃ Bar', end: '┃ Bar' },
+  triangle: { start: '◁ Inherits (hollow triangle)', end: '▷ Inherits (hollow triangle)' },
+  hollowDiamond: { start: '◇ Has (hollow diamond)', end: '◇ Has (hollow diamond)' },
+  one: { start: '‖ Exactly one', end: '‖ Exactly one' },
+  zeroOne: { start: '○| Zero or one', end: '|○ Zero or one' },
+  many: { start: '⋲ Many', end: '⋺ Many' },
+  oneMany: { start: '|⋲ One or many', end: '⋺| One or many' },
+  zeroMany: { start: '○⋲ Zero or many', end: '⋺○ Zero or many' },
 };
+
+/** End shapes in the line menus, in groups. */
+const HEAD_GROUPS: { label: string; heads: ArrowHead[] }[] = [
+  { label: 'Basic', heads: ['none', 'arrow', 'open', 'circle', 'diamond', 'bar'] },
+  { label: 'UML', heads: ['triangle', 'hollowDiamond'] },
+  { label: 'Database (crow’s foot)', heads: ['one', 'zeroOne', 'many', 'oneMany', 'zeroMany'] },
+];
 import { Icons } from './Icons';
 import { TextOptions } from './TextOptions';
 import { ShapeStyle } from './ShapeStyle';
@@ -22,6 +36,7 @@ import { normalizeUrl, openLink } from '../links';
 import { hasText } from '../textStyle';
 import { tooltip } from '../shortcuts';
 import { saveSelectionAsTemplate } from '../templateActions';
+import { isCompartmentShape, shapeOf } from '../shapes';
 
 type ScreenBox = { left: number; top: number; width: number; height: number };
 
@@ -63,8 +78,8 @@ export function ContextToolbar({ box, ids, editing = false }: { box: ScreenBox; 
   const dash = common((c) => c.dash ?? 'solid');
   const bentIds = selConns.filter((c) => bendsOf(c).length > 0 || c.channel).map((c) => c.id);
 
-  // Label text options apply to every selected connector that has a label.
-  const labeled = selConns.filter((c) => c.label);
+  // Label text options (size, color) apply to every selected connector that has a label or end labels.
+  const labeled = selConns.filter((c) => c.label || c.startLabel || c.endLabel);
   const labeledIds = labeled.map((c) => c.id);
   const sizes = new Set(labeled.map((c) => c.labelSize ?? LABEL_DEFAULTS.size));
   const labelSize = sizes.size === 1 ? [...sizes][0] : null;
@@ -113,6 +128,13 @@ export function ContextToolbar({ box, ids, editing = false }: { box: ScreenBox; 
         }}
       >
         <TextOptions items={selItems} editing />
+        {selItems.length === 1 && selItems[0].type === 'rect' && isCompartmentShape(shapeOf(selItems[0])) && (
+          <span className="toolbar-hint">
+            {shapeOf(selItems[0]) === 'entity'
+              ? 'First line: table name · one column per line'
+              : 'New section: press Enter twice, or type --'}
+          </span>
+        )}
       </div>
     );
   }
@@ -142,10 +164,14 @@ export function ContextToolbar({ box, ids, editing = false }: { box: ScreenBox; 
             onChange={(e) => s.styleConnectors(connIds, { startArrow: e.target.value as ArrowHead })}
           >
             {startHead === '' && <option value="">Start…</option>}
-            {ARROW_HEADS.map((h) => (
-              <option key={h} value={h}>
-                {HEAD_LABELS[h].start}
-              </option>
+            {HEAD_GROUPS.map((grp) => (
+              <optgroup key={grp.label} label={grp.label}>
+                {grp.heads.map((h) => (
+                  <option key={h} value={h}>
+                    {HEAD_LABELS[h].start}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
           <select
@@ -156,10 +182,14 @@ export function ContextToolbar({ box, ids, editing = false }: { box: ScreenBox; 
             onChange={(e) => s.styleConnectors(connIds, { endArrow: e.target.value as ArrowHead })}
           >
             {endHead === '' && <option value="">End…</option>}
-            {ARROW_HEADS.map((h) => (
-              <option key={h} value={h}>
-                {HEAD_LABELS[h].end}
-              </option>
+            {HEAD_GROUPS.map((grp) => (
+              <optgroup key={grp.label} label={grp.label}>
+                {grp.heads.map((h) => (
+                  <option key={h} value={h}>
+                    {HEAD_LABELS[h].end}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
           <select
@@ -195,6 +225,27 @@ export function ContextToolbar({ box, ids, editing = false }: { box: ScreenBox; 
             >
               <Icons.text />
             </button>
+          )}
+          {selConns.length === 1 && (
+            <span className="end-labels" title="Small text at each end, like 1, * or 0..1 in UML">
+              {(['startLabel', 'endLabel'] as const).map((key) => (
+                <input
+                  key={key}
+                  className="end-labels__input"
+                  value={selConns[0][key] ?? ''}
+                  placeholder={key === 'startLabel' ? 'start' : 'end'}
+                  maxLength={40}
+                  aria-label={key === 'startLabel' ? 'Text at the start of the line' : 'Text at the end of the line'}
+                  // One undo step per edit of a box.
+                  onFocus={() => s.checkpoint()}
+                  onChange={(e) => {
+                    const v = e.target.value || undefined;
+                    s.updateConnector(selConns[0].id, key === 'startLabel' ? { startLabel: v } : { endLabel: v });
+                  }}
+                  onKeyDown={(e) => (e.key === 'Enter' || e.key === 'Escape') && e.currentTarget.blur()}
+                />
+              ))}
+            </span>
           )}
           {labeled.length > 0 && (
             <>

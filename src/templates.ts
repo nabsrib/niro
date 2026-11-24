@@ -36,6 +36,9 @@ type LinkOptions = {
   to?: Side | null;
   style?: ConnectorStyle;
   label?: string;
+  /** Small text at each end (UML multiplicity). */
+  startLabel?: string;
+  endLabel?: string;
   dash?: LineDash;
   start?: ArrowHead;
   end?: ArrowHead;
@@ -94,6 +97,8 @@ class Builder {
       endArrow: o.end ?? 'arrow',
       ...(o.dash ? { dash: o.dash } : {}),
       ...(o.label ? { label: o.label } : {}),
+      ...(o.startLabel ? { startLabel: o.startLabel } : {}),
+      ...(o.endLabel ? { endLabel: o.endLabel } : {}),
     });
     return id;
   }
@@ -205,6 +210,77 @@ function mindMap(): BoardContent {
       b.link(id, leaf, { style: 'curved', end: 'none', stroke: br.color });
     }
   }
+  return b.done();
+}
+
+function classDiagram(): BoardContent {
+  const b = new Builder();
+  const cls = (x: number, y: number, h: number, text: string) => b.shape('class', x, y, 240, h, text, '#FFFFFF', { fontSize: 16 });
+  const user = cls(0, 0, 150, 'User\n--\n- id: string\n- email: string\n--\n+ signIn()\n+ signOut()');
+  const board = cls(440, 0, 150, 'Board\n--\n- id: string\n- name: string\n--\n+ share(user)\n+ rename(name)');
+  const guest = cls(0, 300, 110, 'GuestUser\n--\n- expiresAt: Date\n--\n+ upgrade()');
+  const member = cls(440, 300, 110, 'Member\n--\n- role: Role\n--\n+ canEdit()');
+  b.link(guest, user, { from: 'top', to: 'bottom', end: 'triangle', style: 'straight' });
+  b.link(user, board, { from: 'right', to: 'left', start: 'diamond', end: 'none', label: 'owns', startLabel: '1', endLabel: '*' });
+  b.link(board, member, { from: 'bottom', to: 'top', start: 'hollowDiamond', end: 'none', startLabel: '1', endLabel: '*' });
+  b.link(member, user, { from: 'left', to: 'right', end: 'open', dash: 'dashed', label: 'refers to' });
+  b.text(0, -70, 400, 'Inherits ▷   Owns ◆   Has ◇   Uses ┄›', 16, { color: GREY_TEXT });
+  return b.done();
+}
+
+function erDiagram(): BoardContent {
+  const b = new Builder();
+  const table = (x: number, y: number, w: number, h: number, text: string) =>
+    b.shape('entity', x, y, w, h, text, '#A6CCF5', { fontSize: 16 });
+  const users = table(0, 0, 200, 140, 'users\nid  PK\nemail\nname\ncreated_at');
+  const boards = table(420, 0, 200, 140, 'boards\nid  PK\nname\nowner_id  FK\nlink_access');
+  const members = table(420, 260, 220, 120, 'board_members\nboard_id  FK\nuser_id  FK\nrole');
+  const sessions = table(0, 260, 200, 120, 'sessions\nid  PK\nuser_id  FK\nexpires_at');
+  const rel = { start: 'one' as const, end: 'zeroMany' as const };
+  b.link(users, boards, { ...rel, from: 'right', to: 'left', label: 'owns' });
+  b.link(boards, members, { ...rel, from: 'bottom', to: 'top' });
+  b.link(users, sessions, { ...rel, from: 'bottom', to: 'top' });
+  b.link(users, members, { ...rel, to: 'left', style: 'straight' });
+  return b.done();
+}
+
+function useCaseDiagram(): BoardContent {
+  const b = new Builder();
+  b.frame(250, 0, 420, 540, 'Online shop');
+  const actor = (x: number, y: number, name: string) => b.shape('actor', x, y, 90, 160, name, '#FFFFFF', { fontSize: 16 });
+  const customer = actor(60, 110, 'Customer');
+  const admin = actor(780, 300, 'Admin');
+  const uc = (y: number, text: string) => b.item('ellipse', 320, y, 280, 90, { text, fontSize: 18 });
+  const browse = uc(40, 'Browse products');
+  const order = uc(160, 'Place order');
+  const pay = uc(280, 'Pay');
+  const manage = uc(410, 'Manage products');
+  const plain = { style: 'straight' as const, end: 'none' as const };
+  b.link(customer, browse, plain);
+  b.link(customer, order, plain);
+  b.link(admin, manage, plain);
+  b.link(order, pay, { from: 'bottom', to: 'top', style: 'straight', end: 'open', dash: 'dashed', label: '«include»' });
+  return b.done();
+}
+
+function stateDiagram(): BoardContent {
+  const b = new Builder();
+  const start = b.item('ellipse', 0, 60, 36, 36, { fill: '#1A1A1A', borderWidth: 0 });
+  const state = (x: number, y: number, text: string) => b.shape('round', x, y, 170, 76, text, '#FFFFFF');
+  const draft = state(100, 40, 'Draft');
+  const review = state(360, 40, 'In review');
+  const published = state(620, 40, 'Published');
+  const archived = state(620, 230, 'Archived');
+  // End state: a ring with a dot in it.
+  const end = b.item('ellipse', 880, 249, 40, 40, { fill: '#FFFFFF', border: '#1A1A1A', borderWidth: 3 });
+  b.item('ellipse', 889, 258, 22, 22, { fill: '#1A1A1A', borderWidth: 0 });
+  const s = { style: 'straight' as const };
+  b.link(start, draft, { ...s, to: 'left' });
+  b.link(draft, review, { ...s, from: 'right', to: 'left', label: 'submit' });
+  b.link(review, draft, { from: 'bottom', to: 'bottom', label: 'changes needed' });
+  b.link(review, published, { ...s, from: 'right', to: 'left', label: 'approve' });
+  b.link(published, archived, { ...s, from: 'bottom', to: 'top', label: 'archive' });
+  b.link(archived, end, { ...s, from: 'right', to: 'left' });
   return b.done();
 }
 
@@ -340,6 +416,10 @@ export const TEMPLATES: TemplateDef[] = [
   { id: 'swimlanes', name: 'Swimlane flowchart', category: 'diagrams', description: 'A process split into lanes, one per person or team.', build: swimlanes },
   { id: 'org-chart', name: 'Org chart', category: 'diagrams', description: 'Who reports to whom, top-down.', build: orgChart },
   { id: 'mind-map', name: 'Mind map', category: 'diagrams', description: 'One main idea with branches and details.', build: mindMap },
+  { id: 'uml-class', name: 'UML class diagram', category: 'diagrams', description: 'Classes with fields and methods; inherits, owns, has.', build: classDiagram },
+  { id: 'er', name: 'ER diagram (database)', category: 'diagrams', description: 'Tables, keys and crow’s-foot relations.', build: erDiagram },
+  { id: 'use-case', name: 'Use case diagram', category: 'diagrams', description: 'Actors, a system boundary and what they can do.', build: useCaseDiagram },
+  { id: 'state', name: 'State diagram', category: 'diagrams', description: 'Start, states, transitions and an end.', build: stateDiagram },
   { id: 'kanban', name: 'Kanban board', category: 'planning', description: 'To do, Doing, Done columns with cards.', build: kanban },
   { id: 'timeline', name: 'Timeline', category: 'planning', description: 'Milestones along a line, month by month.', build: timeline },
   { id: 'retro', name: 'Retrospective', category: 'meetings', description: 'Went well, To improve, Actions.', build: retrospective },

@@ -33,7 +33,10 @@ export type ShapeKind =
   | 'arrow'
   | 'cylinder'
   | 'document'
-  | 'bubble';
+  | 'bubble'
+  | 'class'
+  | 'entity'
+  | 'actor';
 
 /** Style a part of an item's text can override (absent = the item's own style). */
 export interface RunStyle {
@@ -170,9 +173,41 @@ export type ConnectorStyle = 'straight' | 'elbow' | 'curved';
  * curve's shape when the connected items move.
  */
 export type Bend = { along: number; offset: number };
-/** End of a connector: nothing, a filled arrow, an open arrow, a dot, a diamond or a bar. */
-export type ArrowHead = 'none' | 'arrow' | 'open' | 'circle' | 'diamond' | 'bar';
-export const ARROW_HEADS: ArrowHead[] = ['none', 'arrow', 'open', 'circle', 'diamond', 'bar'];
+/**
+ * End of a connector: nothing, a filled arrow, an open arrow, a dot, a diamond
+ * or a bar; UML ends (hollow triangle = inheritance, hollow diamond =
+ * aggregation); and database crow's-foot ends (exactly one, zero or one, many,
+ * one or many, zero or many).
+ */
+export type ArrowHead =
+  | 'none'
+  | 'arrow'
+  | 'open'
+  | 'circle'
+  | 'diamond'
+  | 'bar'
+  | 'triangle'
+  | 'hollowDiamond'
+  | 'one'
+  | 'zeroOne'
+  | 'many'
+  | 'oneMany'
+  | 'zeroMany';
+export const ARROW_HEADS: ArrowHead[] = [
+  'none',
+  'arrow',
+  'open',
+  'circle',
+  'diamond',
+  'bar',
+  'triangle',
+  'hollowDiamond',
+  'one',
+  'zeroOne',
+  'many',
+  'oneMany',
+  'zeroMany',
+];
 /** Line pattern (absent = solid). */
 export type LineDash = 'dashed' | 'dotted';
 /**
@@ -211,6 +246,9 @@ export interface Connector {
   labelSize?: number;
   /** Label text color; absent = LABEL_DEFAULTS.color. */
   labelColor?: string;
+  /** Small text near the start / the end (UML multiplicity like `1`, `*`, `0..1`); absent = none. */
+  startLabel?: string;
+  endLabel?: string;
 }
 
 /** What the pen tool does: draw a solid stroke, draw a see-through highlight, or erase strokes. */

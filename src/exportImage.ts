@@ -1,9 +1,19 @@
 import type { Box, Connector, Item, RunStyle, TextRun } from './types';
 import { boundsOf, intersects } from './geometry';
-import { LABEL_DEFAULTS, connectorGeometry, dashArray, pointAlong, type ConnectorGeometry } from './connectors';
+import { LABEL_DEFAULTS, connectorGeometry, dashArray, endLabels, pointAlong, type ConnectorGeometry } from './connectors';
 import { isDeck, isFrame, renderOrder, withFrameChildren } from './frames';
 import { pathPoints, smoothPath } from './pen';
-import { borderColor, borderDash, borderWidth, shapeOf, shapePath, textInset } from './shapes';
+import {
+  borderColor,
+  borderDash,
+  borderWidth,
+  compartmentColor,
+  compartmentLayout,
+  isCompartmentShape,
+  shapeOf,
+  shapePath,
+  textInset,
+} from './shapes';
 import { FLEX_V, FONT_FAMILY, fontCss, textAlign, textColor, textVAlign, type HAlign, type VAlign } from './textStyle';
 
 /**
@@ -430,6 +440,8 @@ function renderItem(it: Item, opts: SvgOptions, cropped: boolean, idx: number): 
       let shape: string;
       if (it.type === 'ellipse') {
         shape = `<ellipse cx="${it.x + it.w / 2}" cy="${it.y + it.h / 2}" rx="${it.w / 2 - bw / 2}" ry="${it.h / 2 - bw / 2}" fill="${it.fill}"${stroke}/>`;
+      } else if (it.type === 'rect' && isCompartmentShape(kind)) {
+        return compartmentSvg(it, bw, stroke, idx);
       } else if (it.type === 'rect' && kind !== 'rect') {
         shape = `<path transform="translate(${it.x} ${it.y})" d="${shapePath(kind, it.w, it.h, bw / 2)}" fill="${it.fill}"${stroke}/>`;
       } else if (it.type === 'rect') {
@@ -448,6 +460,41 @@ function renderItem(it: Item, opts: SvgOptions, cropped: boolean, idx: number): 
   }
 }
 
+/**
+ * A UML class box or database table: body, header band (tables), dividers and
+ * one text row per line, laid out like the board (`compartmentLayout`).
+ */
+function compartmentSvg(it: Item, bw: number, stroke: string, idx: number): string {
+  const kind = shapeOf(it);
+  const L = compartmentLayout(kind, it.text, it.fontSize, bw, { w: it.w, h: it.h });
+  const w = Math.max(it.w - bw, 0);
+  const h = Math.max(it.h - bw, 0);
+  let out = `<rect x="${it.x + bw / 2}" y="${it.y + bw / 2}" width="${w}" height="${h}" fill="${kind === 'entity' ? '#FFFFFF' : it.fill}"/>`;
+  if (kind === 'entity') {
+    out += `<rect x="${it.x + bw / 2}" y="${it.y + bw / 2}" width="${w}" height="${Math.max(Math.min(L.headerH, it.h - bw) - bw / 2, 0)}" fill="${it.fill}"/>`;
+  }
+  for (const y of L.dividers) {
+    if (y < it.h) out += `<line x1="${it.x}" x2="${it.x + it.w}" y1="${it.y + y}" y2="${it.y + y}" stroke="${borderColor(it)}" stroke-width="${Math.max(bw, 1)}"/>`;
+  }
+  if (stroke) out += `<rect x="${it.x + bw / 2}" y="${it.y + bw / 2}" width="${w}" height="${h}" fill="none"${stroke}/>`;
+  const clipId = `niro-clip-${idx}`;
+  const rows = L.lines
+    .filter((l) => l.text && l.y < it.h)
+    .map((l) => {
+      const x = l.header ? it.x + it.w / 2 : it.x + L.padX;
+      return (
+        `<text x="${x}" y="${it.y + l.y + L.lineH / 2}" dominant-baseline="central" text-anchor="${l.header ? 'middle' : 'start'}"` +
+        ` font-family="${esc(FONT_FAMILY)}" font-size="${L.fontSize}"${l.header ? ' font-weight="700"' : ''}` +
+        ` fill="${compartmentColor(it, l.header)}" xml:space="preserve">${esc(l.text)}</text>`
+      );
+    })
+    .join('');
+  return (
+    `${out}<clipPath id="${clipId}"><rect x="${it.x + L.padX * 0.5}" y="${it.y}" width="${Math.max(it.w - L.padX, 0)}" height="${it.h}"/></clipPath>` +
+    `<g clip-path="url(#${clipId})">${rows}</g>`
+  );
+}
+
 /** Line pattern as an SVG attribute (empty for solid lines). */
 function dashAttr(c: Connector, width: number): string {
   const dash = dashArray(c.dash, width);
@@ -456,13 +503,23 @@ function dashAttr(c: Connector, width: number): string {
 
 /** The connector's end shapes (filled ones, or drawn as lines). */
 function endShapes(g: ConnectorGeometry, c: Connector, width: number): string {
-  return [g.startHead, g.endHead]
+  const heads = [g.startHead, g.endHead]
     .map((h) =>
       h
-        ? `<path d="${h.d}" fill="${h.fill ? c.stroke : 'none'}" stroke="${c.stroke}" stroke-width="${h.fill ? 1 : width}" stroke-linecap="round" stroke-linejoin="round"/>`
+        ? `<path d="${h.d}" fill="${h.fill ? c.stroke : 'none'}" stroke="${c.stroke}" stroke-width="${h.fill ? 1 : width}" stroke-linecap="round" stroke-linejoin="round"/>` +
+          (h.hollow ? `<path d="${h.hollow}" fill="#FFFFFF" stroke="${c.stroke}" stroke-width="${width}"/>` : '')
         : '',
     )
     .join('');
+  // Small labels at the ends (UML multiplicity like 1 or *), as plain SVG text like on the board.
+  const labels = endLabels(g, c)
+    .map(
+      (e) =>
+        `<text x="${e.p.x}" y="${e.p.y}" text-anchor="middle" dominant-baseline="central" font-family="${esc(FONT_FAMILY)}"` +
+        ` font-size="${e.size}" font-weight="600" fill="${c.labelColor ?? LABEL_DEFAULTS.color}" xml:space="preserve">${esc(e.text)}</text>`,
+    )
+    .join('');
+  return heads + labels;
 }
 
 function renderConnector(c: Connector, items: ItemMap, opts: SvgOptions, idx: number): string {

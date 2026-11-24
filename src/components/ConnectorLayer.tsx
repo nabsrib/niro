@@ -2,7 +2,7 @@ import { memo, useLayoutEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useBoard } from '../store';
 import { cullRect, keepRendered, visibleConnectors } from '../culling';
-import { LABEL_DEFAULTS, connectorGeometry, dashArray, pointAlong } from '../connectors';
+import { LABEL_DEFAULTS, connectorGeometry, dashArray, endLabels, pointAlong } from '../connectors';
 import type { Item } from '../types';
 import { TextEditor } from './ItemView';
 
@@ -72,6 +72,7 @@ const ConnectorView = memo(function ConnectorView({ id }: { id: string }) {
   const margin = c.strokeWidth * 2 + 20;
   const fontSize = c.labelSize ?? LABEL_DEFAULTS.size;
   const box = { w: LABEL_BOX.w * fontSize, h: LABEL_BOX.h * fontSize };
+  const ends = endLabels(g, c);
 
   return (
     <g data-connector-id={id}>
@@ -117,17 +118,34 @@ const ConnectorView = memo(function ConnectorView({ id }: { id: string }) {
       {[g.startHead, g.endHead].map(
         (h, i) =>
           h && (
-            <path
-              key={i}
-              d={h.d}
-              fill={h.fill ? c.stroke : 'none'}
-              stroke={c.stroke}
-              strokeWidth={h.fill ? 1 : c.strokeWidth}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
+            <g key={i}>
+              <path
+                d={h.d}
+                fill={h.fill ? c.stroke : 'none'}
+                stroke={c.stroke}
+                strokeWidth={h.fill ? 1 : c.strokeWidth}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              {h.hollow && <path d={h.hollow} fill="#FFFFFF" stroke={c.stroke} strokeWidth={c.strokeWidth} />}
+            </g>
           ),
       )}
+      {ends.map((e) => (
+        <text
+          key={e.key}
+          className="connector__end-label"
+          x={e.p.x}
+          y={e.p.y}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontSize={e.size}
+          fontWeight={600}
+          fill={c.labelColor ?? LABEL_DEFAULTS.color}
+        >
+          {e.text}
+        </text>
+      ))}
       {/* Wide invisible stroke so thin lines are easy to click at any zoom. */}
       <path d={g.d} className="connector__hit" />
       {at && (

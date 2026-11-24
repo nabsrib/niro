@@ -20,9 +20,10 @@ import {
 import type { Gap, Guide } from './snapping';
 import { prepareForInsert, type BoardContent } from './boardFile';
 import { ERASER_DEFAULT, HIGHLIGHTER_COLORS, HIGHLIGHTER_WIDTHS, PEN_COLORS, PEN_WIDTHS } from './pen';
+import { borderWidth, compartmentLayout, isCompartmentShape, shapeOf } from './shapes';
 
 type Clip = { items: Item[]; connectors: Connector[] };
-type ConnectorPatch = Partial<Pick<Connector, 'style' | 'startArrow' | 'endArrow' | 'strokeWidth' | 'stroke' | 'bend' | 'bends' | 'channel' | 'dash' | 'label' | 'labelAt' | 'labelSize' | 'labelColor'>>;
+type ConnectorPatch = Partial<Pick<Connector, 'style' | 'startArrow' | 'endArrow' | 'strokeWidth' | 'stroke' | 'bend' | 'bends' | 'channel' | 'dash' | 'label' | 'labelAt' | 'labelSize' | 'labelColor' | 'startLabel' | 'endLabel'>>;
 
 const PASTE_OFFSET = 24;
 
@@ -762,8 +763,15 @@ export const useBoard = create<BoardState>()((set, get) => ({
     if (item.type === 'frame' && !text.trim()) text = 'Frame';
     const nextRich = rich === undefined ? item.rich : (rich ?? undefined);
     if (item.text === text && JSON.stringify(item.rich ?? null) === JSON.stringify(nextRich ?? null)) return;
+    const patch: Partial<Item> = { text, rich: nextRich };
+    // A class box or table grows taller so every row shows at its text size.
+    const kind = shapeOf(item);
+    if (item.type === 'rect' && isCompartmentShape(kind)) {
+      const need = compartmentLayout(kind, text, item.fontSize, borderWidth(item)).height;
+      if (need > item.h) patch.h = Math.ceil(need);
+    }
     s.checkpoint();
-    s.updateItems({ [id]: { text, rich: nextRich } });
+    s.updateItems({ [id]: patch });
   },
   duplicate: (ids) => {
     const clip = collect(get(), ids);

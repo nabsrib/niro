@@ -33,7 +33,7 @@ import { ItemView } from './ItemView';
 import { commitActiveEdit } from '../editing';
 import { importBoardFile } from '../boardActions';
 import { addImageFiles } from '../images';
-import { SHAPE_SIZES } from '../shapes';
+import { SHAPE_SIZES, SHAPE_START } from '../shapes';
 import { startComment } from './Comments';
 import { eraseStroke, makePathItem, simplify, smoothPath } from '../pen';
 import { ConnectorLayer } from './ConnectorLayer';
@@ -402,6 +402,7 @@ export function Canvas() {
       if (item.type === 'rect' && s.shapeKind !== 'rect') {
         const size = SHAPE_SIZES[s.shapeKind];
         item.shape = s.shapeKind;
+        Object.assign(item, SHAPE_START[s.shapeKind]);
         if (size) Object.assign(item, { x: world.x - size.w / 2, y: world.y - size.h / 2, w: size.w, h: size.h });
       }
       if (item.type === 'frame') {
@@ -640,14 +641,18 @@ export function Canvas() {
         const sy = nb.h / b.h;
         const patches: Record<string, Partial<Item>> = {};
         for (const o of origins) {
+          // Text grows and shrinks with the item: always when the shape is kept, and for
+          // shapes dragged by a corner (by the smaller of the two scales). Side handles
+          // only change the box.
+          const k = lock ? sx : corner && (o.type === 'rect' || o.type === 'ellipse') ? Math.min(sx, sy) : 1;
           patches[o.id] = {
             x: nb.x + (o.x - b.x) * sx,
             y: nb.y + (o.y - b.y) * sy,
             w: o.w * sx,
             h: o.h * sy,
-            fontSize: lock ? o.fontSize * sx : o.fontSize,
+            fontSize: o.fontSize * k,
             // Sizes set on parts of the text scale with the item too.
-            ...(lock && o.rich ? { rich: scaleRuns(o.rich, sx) } : {}),
+            ...(k !== 1 && o.rich ? { rich: scaleRuns(o.rich, k) } : {}),
           };
         }
         s.updateItems(patches);

@@ -98,6 +98,21 @@ body,
   pointer-events: none;
 }
 
+/* UML class boxes and database tables: one row per text line, in sections. */
+.compartments {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.compartments__line {
+  position: absolute;
+  overflow: hidden;
+  white-space: pre;
+  text-overflow: ellipsis;
+}
+
 .item--shape > .item__text,
 .item--shape > [data-editor] {
   position: relative;
@@ -590,6 +605,45 @@ button {
 
 /* Connector menus (start / end shape, line pattern). */
 .line-select { max-width: 118px; margin: 0 2px; }
+
+/* Short tip at the end of a toolbar (e.g. how to start a section in a class box). */
+.toolbar-hint {
+  padding: 0 8px 0 6px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Text at the two ends of a line (UML multiplicity). */
+.end-labels {
+  display: inline-flex;
+  gap: 2px;
+  margin: 0 2px;
+}
+
+.end-labels__input {
+  width: 64px;
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.end-labels__input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.connector__end-label {
+  font-family: inherit;
+  pointer-events: none;
+  user-select: none;
+}
 
 .text-color {
   position: relative;

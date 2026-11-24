@@ -15,8 +15,19 @@ import { itemRuns, normalizeRuns, runCss } from '../richText';
 import type { ItemType, RunStyle, TextRun } from '../types';
 import { useAssetUrl } from '../hooks/useAssetUrl';
 import { domainOf } from '../links';
-import { borderColor, borderDash, borderWidth, shapeOf, shapePath, textInset } from '../shapes';
+import {
+  borderColor,
+  borderDash,
+  borderWidth,
+  compartmentColor,
+  compartmentLayout,
+  isCompartmentShape,
+  shapeOf,
+  shapePath,
+  textInset,
+} from '../shapes';
 import { dashArray } from '../connectors';
+import { zoomToRead } from '../cameraGlide';
 
 /** CSS border style for each border pattern. */
 const CSS_DASH = { solid: 'solid', dashed: 'dashed', dotted: 'dotted' } as const;
@@ -47,6 +58,17 @@ export const ItemView = memo(function ItemView({ id, clip }: { id: string; clip?
     ro.observe(el);
     return () => ro.disconnect();
   }, [id, type]);
+
+  // Starting to type in something whose text is too small to read on screen: zoom in first.
+  useEffect(() => {
+    if (!editing) return;
+    const it = useBoard.getState().items[id];
+    if (!it || it.type === 'frame') return;
+    const k = shapeOf(it);
+    const size =
+      it.type === 'rect' && isCompartmentShape(k) ? compartmentLayout(k, it.text, it.fontSize, borderWidth(it), it).fontSize : it.fontSize;
+    zoomToRead(it, size);
+  }, [editing, id]);
 
   if (!item) return null;
 
@@ -169,6 +191,9 @@ export const ItemView = memo(function ItemView({ id, clip }: { id: string; clip?
   const svgShape = item.type === 'rect' && kind !== 'rect';
   const bw = bordered ? borderWidth(item) : 0;
   const inset = textInset(kind);
+  // UML class boxes and database tables lay their text out in sections.
+  const layout =
+    svgShape && isCompartmentShape(kind) ? compartmentLayout(kind, item.text, item.fontSize, bw, { w: item.w, h: item.h }) : null;
   return (
     <div
       ref={ref}
@@ -191,15 +216,16 @@ export const ItemView = memo(function ItemView({ id, clip }: { id: string; clip?
             }
           : {}),
         color: textColor(item),
-        fontSize: item.fontSize,
+        // Class boxes and tables may shrink their text to fit (the editor uses the same size).
+        fontSize: layout ? layout.fontSize : item.fontSize,
         fontWeight: item.bold ? 700 : undefined,
         fontStyle: item.italic ? 'italic' : undefined,
         textDecoration: item.underline ? 'underline' : undefined,
-        textAlign: textAlign(item),
-        alignItems: isText ? undefined : FLEX_V[textVAlign(item)],
+        textAlign: layout ? 'left' : textAlign(item),
+        alignItems: isText ? undefined : layout ? 'flex-start' : FLEX_V[textVAlign(item)],
       }}
     >
-      {svgShape && (
+      {svgShape && !layout && (
         <svg className="shape__svg" width={item.w} height={item.h} aria-hidden="true">
           <path
             d={shapePath(kind, item.w, item.h, bw / 2)}
@@ -212,8 +238,50 @@ export const ItemView = memo(function ItemView({ id, clip }: { id: string; clip?
           />
         </svg>
       )}
+      {layout && (
+        <svg className="shape__svg" width={item.w} height={item.h} aria-hidden="true">
+          {/* A table: white body under a header band in the item's color. A class: all in its color. */}
+          <rect x={bw / 2} y={bw / 2} width={Math.max(item.w - bw, 0)} height={Math.max(item.h - bw, 0)} fill={kind === 'entity' ? '#FFFFFF' : item.fill} />
+          {kind === 'entity' && (
+            <rect x={bw / 2} y={bw / 2} width={Math.max(item.w - bw, 0)} height={Math.max(Math.min(layout.headerH, item.h - bw) - bw / 2, 0)} fill={item.fill} />
+          )}
+          {layout.dividers.map((y, i) =>
+            y < item.h ? <line key={i} x1={0} x2={item.w} y1={y} y2={y} stroke={borderColor(item)} strokeWidth={Math.max(bw, 1)} /> : null,
+          )}
+          {bw > 0 && (
+            <path
+              d={shapePath(kind, item.w, item.h, bw / 2)}
+              fill="none"
+              stroke={borderColor(item)}
+              strokeWidth={bw}
+              strokeDasharray={dashArray(borderDash(item), bw)}
+            />
+          )}
+        </svg>
+      )}
       {editing ? (
         <TextEditor id={id} initial={item.text} runs={itemRuns(item)} placeholder={PLACEHOLDER[item.type]} />
+      ) : layout ? (
+        <div className="compartments">
+          {layout.lines.map((l, i) => (
+            <div
+              key={i}
+              className="compartments__line"
+              style={{
+                top: l.y,
+                left: layout.padX,
+                right: layout.padX,
+                height: layout.lineH,
+                lineHeight: `${layout.lineH}px`,
+                fontWeight: l.header ? 700 : undefined,
+                textAlign: l.header ? 'center' : 'left',
+                color: compartmentColor(item, l.header),
+              }}
+            >
+              {l.text}
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="item__text">
           {item.rich
@@ -242,6 +310,30 @@ function AssetImage({ id }: { id?: string }) {
   return <img className="image__img" src={url} alt="" draggable={false} />;
 }
 
+/** Item whose box already grew in the current edit (its growth is one undo step). */
+let grownEdit: string | null = null;
+
+/**
+ * Typing more than fits in a shape (rectangles, shapes, ellipses, class boxes,
+ * tables): the box grows taller, keeping its top, so nothing is hidden.
+ * Miro hides the overflow instead; growing is what people ask it for.
+ */
+function growToFit(id: string, el: HTMLElement) {
+  const s = useBoard.getState();
+  const it = s.items[id];
+  if (!it || it.locked || (it.type !== 'rect' && it.type !== 'ellipse')) return;
+  const over = el.scrollHeight - el.clientHeight;
+  if (over <= 1) return;
+  // Shapes keep some of their height clear around the text (textInset), so grow by more.
+  const ins = textInset(shapeOf(it));
+  const share = Math.max(1 - ins.y - (ins.bottom ?? ins.y), 0.2) * (it.type === 'ellipse' ? 0.75 : 1);
+  if (grownEdit !== id) {
+    s.checkpoint();
+    grownEdit = id;
+  }
+  s.updateItems({ [id]: { h: it.h + Math.ceil(over / share) + 4 } });
+}
+
 export function TextEditor({
   id,
   initial,
@@ -264,6 +356,7 @@ export function TextEditor({
 
   useEffect(() => {
     const el = ref.current!;
+    grownEdit = null;
     if (runs) runsToDom(el, runs);
     else el.innerText = initial;
     el.focus();
@@ -347,6 +440,7 @@ export function TextEditor({
       contentEditable={rich ? 'true' : 'plaintext-only'}
       suppressContentEditableWarning
       spellCheck={false}
+      onInput={() => ref.current && growToFit(id, ref.current)}
       onKeyDown={(e) => {
         e.stopPropagation();
         if (e.key === 'Escape' || (e.key === 'Enter' && (singleLine || e.ctrlKey || e.metaKey))) {

@@ -268,6 +268,8 @@ function sanitizeConnector(raw: unknown, itemIds: Set<string>): Connector | null
     ...(Number.isFinite(raw.labelAt) ? { labelAt: Math.min(Math.max(raw.labelAt as number, 0), 1) } : {}),
     ...(Number.isFinite(raw.labelSize) ? { labelSize: Math.min(Math.max(raw.labelSize as number, 4), 400) } : {}),
     ...(typeof raw.labelColor === 'string' ? { labelColor: color(raw.labelColor, LABEL_DEFAULTS.color) } : {}),
+    ...(typeof raw.startLabel === 'string' && raw.startLabel.trim() ? { startLabel: raw.startLabel.slice(0, 40) } : {}),
+    ...(typeof raw.endLabel === 'string' && raw.endLabel.trim() ? { endLabel: raw.endLabel.slice(0, 40) } : {}),
   };
 }
 

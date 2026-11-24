@@ -1,5 +1,5 @@
 import { useBoard } from './store';
-import { fitCamera } from './geometry';
+import { clampZoom, fitCamera } from './geometry';
 import type { Box, Camera } from './types';
 
 const GLIDE_MS = 350;
@@ -46,4 +46,23 @@ export function glideTo(target: Camera, viewport: { w: number; h: number }, ms =
 export function glideToBox(box: Box, pad = 80, maxZ = 2): () => void {
   const { viewport } = useBoard.getState();
   return glideTo(fitCamera(box, viewport.w, viewport.h, pad, maxZ), viewport);
+}
+
+/** Text smaller than this on screen (px) is hard to type in; editing it zooms in. */
+const READ_MIN_PX = 11;
+/** Screen size (px) the text gets after zooming in to type. */
+const READ_PX = 16;
+
+/**
+ * Starting to type in an item whose text would look tiny on screen (zoomed far
+ * out): glide in until the text reads at about 16 px, centred on the item (on
+ * its top part when the item is taller than the view).
+ */
+export function zoomToRead(box: Box, fontSize: number) {
+  const { camera, viewport } = useBoard.getState();
+  if (!viewport.w || fontSize <= 0 || fontSize * camera.z >= READ_MIN_PX) return;
+  const z = clampZoom(READ_PX / fontSize);
+  const cx = box.x + box.w / 2;
+  const cy = box.h * z > viewport.h * 0.8 ? box.y + (viewport.h * 0.4) / z : box.y + box.h / 2;
+  glideTo({ z, x: viewport.w / 2 - cx * z, y: viewport.h / 2 - cy * z }, viewport);
 }

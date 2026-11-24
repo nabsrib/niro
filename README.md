@@ -69,7 +69,11 @@ no account needed), and a small optional server adds what makes a whiteboard a t
 - **Items**: sticky notes, text, rectangles and ellipses (click to place, or drag to size).
 - **Shapes** (like Miro): the Rectangle tool (R) opens a shapes flyout: rectangle, rounded rectangle, pill,
   triangle, diamond, parallelogram, hexagon, star, arrow, cylinder, document and speech bubble, all with text
-  inside (pill, diamond, parallelogram, document and cylinder are the flowchart shapes). Change a
+  inside (pill, diamond, parallelogram, document and cylinder are the flowchart shapes). Diagram shapes:
+  **UML class** (name, fields and methods in sections; press Enter twice or type `--` to start a new section;
+  the text shrinks to fit when the box is small),
+  **database table** (first line is the table name in a coloured header, one column per line) and **actor**
+  (stick figure with its name underneath, for use case diagrams). Change a
   shape later from its toolbar. Connectors meet a shape's real outline (a diamond's corners, a triangle's sides).
 - **Borders** on rectangles, shapes and ellipses: color, width (or none) and pattern (solid, dashed, dotted).
 - **Emoji** (J or the toolbar): pick from reactions, status signs, things and arrows; placed in the middle of
@@ -80,7 +84,7 @@ no account needed), and a small optional server adds what makes a whiteboard a t
   (Ctrl+Enter), resolve / reopen or delete; drag a pin to move it. Pins keep their size at any zoom and move
   with their frame. Viewers can read comments.
 - **Templates** (toolbar, Shift+T or the niro menu): a gallery of ready-made layouts: flowchart, swimlane
-  flowchart, org chart, mind map, kanban, timeline, retrospective, daily stand-up, brainstorm, SWOT, priority
+  flowchart, org chart, mind map, UML class diagram, ER diagram, use case diagram, state diagram, kanban, timeline, retrospective, daily stand-up, brainstorm, SWOT, priority
   matrix and customer journey map. Click one to add it to the middle of the view (selected, one undo step).
   **My templates**: select items and use "Save as template" in their toolbar; saved in this browser, with
   rename and delete in the gallery.
@@ -90,7 +94,8 @@ no account needed), and a small optional server adds what makes a whiteboard a t
   GIF and WebP up to 10 MB; resizing keeps the picture's shape. Images work like other items: inside frames they
   move, copy and present with the frame, and they are included in image and JSON exports.
 - **Select and arrange**: click, Shift-click and marquee selection, move, 8-handle resize (sticky notes keep
-  and images keep their shape; Shift locks it for others), duplicate, copy / cut / paste, delete, arrow-key nudge, bring to
+  and images keep their shape; Shift locks it for others; dragging a shape's corner scales its text too),
+  duplicate, copy / cut / paste, delete, arrow-key nudge, bring to
   front / send to back, color palette.
 - **Snapping**: edges and centers line up with nearby items (pink guides), and moving snaps to equal spacing
   with gap markers. Hold Alt to move freely.
@@ -100,7 +105,8 @@ no account needed), and a small optional server adds what makes a whiteboard a t
 
 ### Text
 
-- Double-click (or Enter) a sticky, shape or text to type in it.
+- Double-click (or Enter) a sticky, shape or text to type in it. If the text would look tiny on screen, the view
+  zooms in first. Typing more than fits makes a shape grow taller (Miro hides the extra text instead).
 - **Text options** in the toolbar: size, bold, italic, underline, horizontal and vertical alignment, text color.
 - **Rich text**: select some words while typing and style just those (size, bold, italic, underline, color);
   Ctrl+B / Ctrl+I / Ctrl+U work too.
@@ -115,8 +121,10 @@ no account needed), and a small optional server adds what makes a whiteboard a t
   points to add a bend there; drag a bend point to move it, double-click it to remove it. Straight lines keep
   sharp corners, curved lines pass smoothly through every bend. On an elbow line, drag the bar on its middle
   segment sideways (double-click puts it back). "Reset line" removes all bends.
-- **Line style**: start and end shapes (none, arrow, open arrow, dot, diamond, bar) and pattern (solid, dashed,
-  dotted) from the line's toolbar, plus color and width. Dragged bend points snap to their neighbours
+- **Line style**: start and end shapes (none, arrow, open arrow, dot, diamond, bar; UML hollow triangle for
+  "inherits" and hollow diamond for "has"; database crow's feet: exactly one, zero or one, many, one or many,
+  zero or many) and pattern (solid, dashed, dotted) from the line's toolbar, plus color and width.
+  **End labels**: small text at each end (like `1`, `*` or `0..1`), typed in the two boxes of a line's toolbar. Dragged bend points snap to their neighbours
   (straight across or up and down) and to nearby shapes, with pink guides; hold Alt to move freely.
 - **Labels**: double-click a connector to type a label that follows the line; drag it along the line, set its
   size and color.
@@ -413,7 +421,8 @@ niro/
 - [x] More shapes, borders, frame background and fit to contents, frames panel
 - [x] Emoji, link cards, comments, lock, clip / hide frames, frame links, bend snapping
 - [x] Templates gallery (diagrams, planning, meetings, strategy), My templates, flowchart shapes
-- [ ] More diagram kits: UML class / ER diagrams, mind map with automatic layout, sequence diagrams, tables
+- [x] UML and database diagrams: class box, table, actor, UML and crow's-foot line ends, end labels, 4 templates
+- [ ] More diagram kits: mind map with automatic layout, sequence diagrams, tables
 - [ ] Boards dashboard with thumbnails
 - [ ] Typing together in one item (letter-by-letter merging)
 

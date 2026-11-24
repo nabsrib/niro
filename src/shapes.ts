@@ -1,4 +1,5 @@
 import type { Item, LineDash, ShapeKind, Vec } from './types';
+import { textOn } from './colors';
 
 /**
  * Shape outlines for rectangle items (`item.shape`; absent = plain rectangle).
@@ -19,7 +20,130 @@ export const SHAPES: { kind: ShapeKind; label: string }[] = [
   { kind: 'cylinder', label: 'Cylinder' },
   { kind: 'document', label: 'Document' },
   { kind: 'bubble', label: 'Speech bubble' },
+  { kind: 'class', label: 'UML class (sections split by a "--" line)' },
+  { kind: 'entity', label: 'Database table (first line is the name)' },
+  { kind: 'actor', label: 'Actor (use case)' },
 ];
+
+/** What a new shape starts with when placed (text, color, text size); others start empty. */
+export const SHAPE_START: Partial<Record<ShapeKind, Partial<Item>>> = {
+  class: { text: 'ClassName\n--\n- name: string\n--\n+ save(): void', fill: '#FFFFFF', fontSize: 16 },
+  entity: { text: 'table_name\nid  PK\nname\nowner_id  FK', fill: '#A6CCF5', fontSize: 16 },
+  actor: { text: 'Actor', fontSize: 16 },
+};
+
+/** Text color of a class / table row: a chosen text color, else readable on what is behind it. */
+export function compartmentColor(it: Item, header: boolean): string {
+  if (it.textColor) return it.textColor;
+  // A table's rows sit on white; its header and a whole class box on the item's color.
+  return shapeOf(it) === 'entity' && !header ? '#1a1a1a' : textOn(it.fill);
+}
+
+/** Shapes whose text is laid out in sections with lines between them (UML class, database table). */
+export const isCompartmentShape = (kind: ShapeKind) => kind === 'class' || kind === 'entity';
+
+export interface CompartmentLine {
+  text: string;
+  /** Top of the line, from the item's top. */
+  y: number;
+  /** The first section (class name, table name): bold and centred. */
+  header: boolean;
+}
+
+export interface CompartmentLayout {
+  /** Text size used: the item's, or smaller so every row fits the box. */
+  fontSize: number;
+  lines: CompartmentLine[];
+  /** Divider lines, from the item's top. */
+  dividers: number[];
+  /** Height of the first section (a table's coloured header band). */
+  headerH: number;
+  lineH: number;
+  /** Room left and right of the text. */
+  padX: number;
+  /** Height all rows need, borders included (at `fontSize`). */
+  height: number;
+}
+
+/** A line made of two or more dashes (or a long dash) starts a new section; text after it is the section's first row. */
+const SECTION_MARK = /^\s*(?:[-‐‑‒–—―]{2,}|[–—―])\s*(.*)$/;
+
+/**
+ * Split text lines into sections: at a `--` line (text after the dashes starts
+ * the new section), or at an empty line (several empty lines count once; empty
+ * lines at the end are ignored). `--` lines in a row make empty sections.
+ */
+function splitSections(lines: string[]): string[][] {
+  const out: string[][] = [[]];
+  let blankBreak = false; // the last section was started by an empty line
+  for (const l of lines) {
+    const m = SECTION_MARK.exec(l);
+    if (m) {
+      if (blankBreak) out[out.length - 1] = [];
+      else out.push([]);
+      blankBreak = false;
+      if (m[1]) out[out.length - 1].push(m[1]);
+    } else if (!l.replace(/[\s ​]/g, '')) {
+      if (!blankBreak && out[out.length - 1].length) {
+        out.push([]);
+        blankBreak = true;
+      }
+    } else {
+      out[out.length - 1].push(l);
+      blankBreak = false;
+    }
+  }
+  if (blankBreak) out.pop();
+  return out;
+}
+
+/** Rough width of a row in ems (Inter averages a little over half an em per character). */
+const rowEms = (t: string, header: boolean) => t.length * (header ? 0.62 : 0.58);
+
+/**
+ * Text of a class box or a database table split into sections, one text line
+ * per row (no wrapping). A class splits at `--` lines or empty lines; a table's
+ * first line is its name and the rest its columns. The text uses the item's
+ * size, made smaller when needed so all rows fit the box (`box`). Used by the
+ * board and export.
+ */
+export function compartmentLayout(
+  kind: ShapeKind,
+  text: string,
+  fontSize: number,
+  border: number,
+  box?: { w: number; h: number },
+): CompartmentLayout {
+  const raw = text.split('\n');
+  const sections =
+    kind === 'entity' ? [[raw[0] ?? ''], ...(raw.length > 1 ? splitSections(raw.slice(1)) : [[]])] : splitSections(raw);
+  if (box) {
+    // Height and width per unit of text size, to shrink the text until it fits.
+    const perUnit = sections.reduce((sum, sec) => sum + 0.7 + (sec.length ? sec.length * 1.35 : 0.81), 0);
+    const widest = Math.max(1, ...sections.flatMap((sec, i) => sec.map((t) => rowEms(t, i === 0) + 1.2)));
+    const fit = Math.min((box.h - border * 2) / perUnit, (box.w - border * 2) / widest);
+    fontSize = Math.max(Math.min(fontSize, fit), 4);
+  }
+  const lineH = fontSize * 1.35;
+  const padY = fontSize * 0.35;
+  const lines: CompartmentLine[] = [];
+  const dividers: number[] = [];
+  let y = border;
+  let headerH = 0;
+  sections.forEach((sec, i) => {
+    if (i > 0) dividers.push(y);
+    y += padY;
+    // An empty section still shows as a short band.
+    if (!sec.length) y += lineH * 0.6;
+    for (const t of sec) {
+      lines.push({ text: t, y, header: i === 0 });
+      y += lineH;
+    }
+    y += padY;
+    if (i === 0) headerH = y;
+  });
+  return { fontSize, lines, dividers, headerH, lineH, padX: fontSize * 0.6 + border, height: y + border };
+}
 export const SHAPE_KINDS = SHAPES.map((s) => s.kind);
 
 /** The shape of an item (rectangles only; others count as plain boxes). */
@@ -114,6 +238,22 @@ export function shapePath(kind: ShapeKind, w: number, h: number, inset = 0): str
         `Q ${r(o + W * 0.75)} ${r(o + H - a * 3)} ${r(o + W / 2)} ${r(o + H - a)} T ${r(o)} ${r(o + H - a)} Z`
       );
     }
+    case 'actor': {
+      // Stick figure in the top three quarters; the name goes underneath (textInset).
+      // Every line is its own two-point subpath, so filling only fills the head.
+      const cx = o + W / 2;
+      const hr = Math.min(W * 0.16, H * 0.09);
+      const hy = o + hr;
+      const neck = o + hr * 2;
+      const hip = o + H * 0.48;
+      const arms = o + H * 0.28;
+      const feet = o + H * 0.7;
+      return (
+        `M ${r(cx + hr)} ${r(hy)} A ${r(hr)} ${r(hr)} 0 1 0 ${r(cx - hr)} ${r(hy)} A ${r(hr)} ${r(hr)} 0 1 0 ${r(cx + hr)} ${r(hy)} Z ` +
+        `M ${r(cx)} ${r(neck)} L ${r(cx)} ${r(hip)} M ${r(o + W * 0.15)} ${r(arms)} L ${r(o + W * 0.85)} ${r(arms)} ` +
+        `M ${r(cx)} ${r(hip)} L ${r(o + W * 0.2)} ${r(feet)} M ${r(cx)} ${r(hip)} L ${r(o + W * 0.8)} ${r(feet)}`
+      );
+    }
     case 'cylinder': {
       // Body with a curved bottom, plus the top ellipse drawn in full.
       const ry = Math.min(H * 0.15, W * 0.25);
@@ -160,6 +300,8 @@ export function textInset(kind: ShapeKind): { x: number; y: number; bottom?: num
       return { x: 0.12, y: 0 };
     case 'document':
       return { x: 0.04, y: 0.04, bottom: 0.16 };
+    case 'actor':
+      return { x: 0, y: 0.72, bottom: 0 };
     case 'bubble':
       return { x: 0.06, y: 0.04, bottom: 0.22 };
     default:
@@ -201,5 +343,8 @@ export const SHAPE_SIZES: Partial<Record<ShapeKind, { w: number; h: number }>> =
   cylinder: { w: 140, h: 170 },
   pill: { w: 200, h: 80 },
   document: { w: 180, h: 130 },
+  class: { w: 220, h: 150 },
+  entity: { w: 200, h: 150 },
+  actor: { w: 90, h: 160 },
   bubble: { w: 220, h: 150 },
 };

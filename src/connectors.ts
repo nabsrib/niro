@@ -248,18 +248,72 @@ function roundedPolyline(pts: Vec[], radius: number): string {
   return d + ` L ${fmt(pts[pts.length - 1])}`;
 }
 
-/** An end shape: its outline, and whether it is filled (else drawn as a line). */
+/**
+ * An end shape: its outline, and whether it is filled with the line color (else
+ * drawn as a line). `hollow`: extra outline filled white (the "zero" ring of a
+ * crow's-foot end), drawn over the line.
+ */
 export interface HeadShape {
   d: string;
   fill: boolean;
+  hollow?: string;
 }
 
 /** How far (as a fraction of the head size) the line stops short of the tip, so it ends under the head. */
-const HEAD_TRIM: Record<ArrowHead, number> = { none: 0, arrow: 0.7, open: 0.1, circle: 0.8, diamond: 0.95, bar: 0 };
+const HEAD_TRIM: Record<ArrowHead, number> = {
+  none: 0,
+  arrow: 0.7,
+  open: 0.1,
+  circle: 0.8,
+  diamond: 0.95,
+  bar: 0,
+  // Hollow shapes: the line stops at their back so it doesn't show through.
+  triangle: 1.1,
+  hollowDiamond: 1.2,
+  one: 0,
+  zeroOne: 0,
+  many: 0,
+  oneMany: 0,
+  zeroMany: 0,
+};
 
 function headShape(kind: ArrowHead, tip: Vec, dir: Vec, size: number): HeadShape | null {
   const n = { x: -dir.y, y: dir.x };
+  // Crow's-foot pieces, measured back from the tip (where the line meets the item).
+  const s = size * 1.1;
+  const bar = (at: number) => {
+    const p = sub(tip, mul(dir, at));
+    return `M ${fmt(add(p, mul(n, s * 0.55)))} L ${fmt(sub(p, mul(n, s * 0.55)))}`;
+  };
+  const crow = `M ${fmt(add(tip, mul(n, s * 0.6)))} L ${fmt(sub(tip, mul(dir, s)))} L ${fmt(sub(tip, mul(n, s * 0.6)))}`;
+  const ring = (at: number) => {
+    const c = sub(tip, mul(dir, at));
+    const r = s * 0.3;
+    return `M ${round(c.x + r)} ${round(c.y)} A ${round(r)} ${round(r)} 0 1 0 ${round(c.x - r)} ${round(c.y)} A ${round(r)} ${round(r)} 0 1 0 ${round(c.x + r)} ${round(c.y)} Z`;
+  };
   switch (kind) {
+    case 'triangle': {
+      const base = sub(tip, mul(dir, size * 1.1));
+      return { d: `M ${fmt(tip)} L ${fmt(add(base, mul(n, size * 0.6)))} L ${fmt(sub(base, mul(n, size * 0.6)))} Z`, fill: false };
+    }
+    case 'hollowDiamond': {
+      const m = sub(tip, mul(dir, size * 0.6));
+      const back = sub(tip, mul(dir, size * 1.2));
+      return {
+        d: `M ${fmt(tip)} L ${fmt(add(m, mul(n, size * 0.4)))} L ${fmt(back)} L ${fmt(sub(m, mul(n, size * 0.4)))} Z`,
+        fill: false,
+      };
+    }
+    case 'one':
+      return { d: `${bar(s * 0.45)} ${bar(s * 0.8)}`, fill: false };
+    case 'zeroOne':
+      return { d: bar(s * 0.45), fill: false, hollow: ring(s * 1.05) };
+    case 'many':
+      return { d: crow, fill: false };
+    case 'oneMany':
+      return { d: `${crow} ${bar(s * 1.3)}`, fill: false };
+    case 'zeroMany':
+      return { d: crow, fill: false, hollow: ring(s * 1.45) };
     case 'arrow': {
       const base = sub(tip, mul(dir, size));
       return { d: `M ${fmt(tip)} L ${fmt(add(base, mul(n, size * 0.5)))} L ${fmt(sub(base, mul(n, size * 0.5)))} Z`, fill: true };
@@ -371,8 +425,9 @@ export function connectorGeometry(c: Connector, items: ItemMap): ConnectorGeomet
   const { a, b } = r;
   const head = 8 + c.strokeWidth * 2;
   // Pull the stroke back under the end shapes so it does not poke past them.
-  const trimA = head * HEAD_TRIM[c.startArrow];
-  const trimB = head * HEAD_TRIM[c.endArrow];
+  // (An end shape this version doesn't know, from a newer client, trims nothing.)
+  const trimA = head * (HEAD_TRIM[c.startArrow] ?? 0);
+  const trimB = head * (HEAD_TRIM[c.endArrow] ?? 0);
   let d: string;
   let tanA: Vec; // direction of travel leaving `a`
   let tanB: Vec; // direction of travel arriving at `b`
@@ -467,6 +522,35 @@ export const LABEL_DEFAULTS = { size: 18, color: '#1A1A1A' };
 /** Font sizes offered for connector labels. */
 export const LABEL_SIZES = [12, 14, 18, 24, 32, 48, 64, 96];
 export const LABEL_COLORS = ['#1A1A1A', '#6B6B76', '#E5383B', '#F28C28', '#2BA84A', '#2F6FED', '#8E44D9', '#FFFFFF'];
+
+/** A small label near one end of a line (UML multiplicity like `1`, `*`, `0..1`). */
+export interface EndLabel {
+  key: 'start' | 'end';
+  text: string;
+  /** Centre of the text. */
+  p: Vec;
+  size: number;
+}
+
+/**
+ * Where a line's end labels sit: a little way in from each end, beside the
+ * line (clear of the end shape), at the line's label size (drawn semi-bold).
+ */
+export function endLabels(g: Pick<ConnectorGeometry, 'a' | 'b' | 'samples'>, c: Connector): EndLabel[] {
+  const out: EndLabel[] = [];
+  const S = g.samples;
+  if (S.length < 2) return out;
+  const size = Math.round(c.labelSize ?? LABEL_DEFAULTS.size);
+  const head = 8 + c.strokeWidth * 2;
+  const place = (key: EndLabel['key'], text: string, tip: Vec, inward: Vec) => {
+    const n = { x: -inward.y, y: inward.x };
+    const p = add(add(tip, mul(inward, head * 1.6 + size * 0.6)), mul(n, size * 0.9));
+    out.push({ key, text, p, size });
+  };
+  if (c.startLabel) place('start', c.startLabel, g.a, norm(sub(S[1], S[0])));
+  if (c.endLabel) place('end', c.endLabel, g.b, norm(sub(S[S.length - 2], S[S.length - 1])));
+  return out;
+}
 
 /** Point `t` (0..1) of the way along a polyline, measured by length. */
 export function pointAlong(pts: Vec[], t: number): Vec {
