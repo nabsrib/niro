@@ -3,7 +3,7 @@ import { useBoard } from '../store';
 import { LABEL_COLORS, LABEL_DEFAULTS, LABEL_SIZES, bendsOf } from '../connectors';
 import { deckSlides, isDeck, isFrame } from '../frames';
 import { PALETTE } from '../colors';
-import { type ArrowHead, type Connector, type ConnectorStyle, type Item, type LineDash } from '../types';
+import { type ArrowHead, type Connector, type TreeLayout, type ConnectorStyle, type Item, type LineDash } from '../types';
 
 /** Menu wording for each end shape, at the start and at the end of a line. */
 const HEAD_LABELS: Record<ArrowHead, { start: string; end: string }> = {
@@ -37,6 +37,7 @@ import { hasText } from '../textStyle';
 import { tooltip } from '../shortcuts';
 import { saveSelectionAsTemplate } from '../templateActions';
 import { isCompartmentShape, shapeOf } from '../shapes';
+import { treeLayoutOf, treeRootOf } from '../trees';
 
 type ScreenBox = { left: number; top: number; width: number; height: number };
 
@@ -61,6 +62,10 @@ export function ContextToolbar({ box, ids, editing = false }: { box: ScreenBox; 
 
   const first = selItems[0];
   const singleFrame = ids.length === 1 && isFrame(first) ? first : undefined;
+  // One mind map node selected: its tree tools (the layout choice lives on the root).
+  const treeNode = ids.length === 1 && first?.tree ? first : undefined;
+  const treeRootId = treeNode ? treeRootOf(items, treeNode.id) : null;
+  const treeRoot = treeRootId ? items[treeRootId] : undefined;
   const current = first
     ? first.type === 'text' || first.type === 'path'
       ? first.color
@@ -397,6 +402,20 @@ export function ContextToolbar({ box, ids, editing = false }: { box: ScreenBox; 
               <Icons.fit />
             </button>
           )}
+          {!isDeck(singleFrame) && (
+            <button
+              className={`icon-btn${singleFrame.stack ? ' icon-btn--active' : ''}`}
+              title={singleFrame.stack ? 'Stop stacking cards' : 'Stack cards (kanban column): what is inside lines up in one column'}
+              aria-label="Stack cards"
+              aria-pressed={!!singleFrame.stack}
+              onClick={() => {
+                s.restyleItems([singleFrame.id], () => ({ stack: singleFrame.stack ? undefined : true }));
+                s.layoutDecks();
+              }}
+            >
+              <Icons.stack />
+            </button>
+          )}
           <button
             className="icon-btn"
             title="Export this frame as an image"
@@ -451,6 +470,50 @@ export function ContextToolbar({ box, ids, editing = false }: { box: ScreenBox; 
           <ShapeStyle items={selItems} />
           <div className="divider" />
         </>
+      )}
+      {treeNode && (
+        <>
+          <button className="icon-btn" title="Add a child  Tab" aria-label="Add a child" onClick={() => s.addTreeNode(treeNode.id, 'child')}>
+            <Icons.addChild />
+          </button>
+          {treeNode.tree?.parent && (
+            <button
+              className="icon-btn"
+              title="Add a sibling  (Enter while typing)"
+              aria-label="Add a sibling"
+              onClick={() => s.addTreeNode(treeNode.id, 'sibling')}
+            >
+              <Icons.addSibling />
+            </button>
+          )}
+          {treeRoot && (
+            <select
+              className="font-size line-select"
+              value={treeLayoutOf(treeRoot)}
+              title="Layout of this mind map"
+              aria-label="Layout of this mind map"
+              onChange={(e) => {
+                s.setTreeLayout(treeRoot.id, e.target.value as TreeLayout);
+                e.currentTarget.blur();
+              }}
+            >
+              <option value="mind">Mind map (both sides)</option>
+              <option value="right">Mind map (right side)</option>
+              <option value="org">Org chart (top-down)</option>
+            </select>
+          )}
+          <div className="divider" />
+        </>
+      )}
+      {!treeNode && selItems.length === 1 && selConns.length === 0 && ['rect', 'ellipse', 'sticky'].includes(first.type) && (
+        <button
+          className="icon-btn"
+          title="Start a mind map from this  M"
+          aria-label="Start a mind map from this"
+          onClick={() => s.startMindMap({ x: 0, y: 0 }, first.id)}
+        >
+          <Icons.mindmap />
+        </button>
       )}
       {/* Colors don't apply to images (a selection of only images has no palette). */}
       {!(selConns.length === 0 && selItems.length > 0 && selItems.every((it) => it.type === 'image' || it.type === 'emoji')) && (

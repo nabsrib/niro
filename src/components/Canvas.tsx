@@ -34,6 +34,7 @@ import { commitActiveEdit } from '../editing';
 import { importBoardFile } from '../boardActions';
 import { addImageFiles } from '../images';
 import { SHAPE_SIZES, SHAPE_START } from '../shapes';
+import { collapsedHidden, withTreeChildren } from '../trees';
 import { startComment } from './Comments';
 import { eraseStroke, makePathItem, simplify, smoothPath } from '../pen';
 import { ConnectorLayer } from './ConnectorLayer';
@@ -499,7 +500,10 @@ export function Canvas() {
       const movable = selected.filter((id) => !s.items[id]?.locked);
       if (!movable.length) return;
       // Frames carry their contents, including loose connector ends inside them.
-      const moving = withFrameChildren(movable, s.items, s.order).filter((id) => !s.items[id]?.locked);
+      // Mind map nodes carry their branch.
+      const moving = [...new Set(withTreeChildren(withFrameChildren(movable, s.items, s.order), s.items))].filter(
+        (id) => !s.items[id]?.locked,
+      );
       const frames = movable.map((id) => s.items[id]).filter(isFrame);
       const origin: Record<string, Vec> = {};
       const freeEnds: Record<string, FreeEnds> = {};
@@ -583,6 +587,20 @@ export function Canvas() {
 
         // Dragging one frame over a slide deck: show where it would join the row.
         const dragged = s.selected.length === 1 ? s.items[s.selected[0]] : undefined;
+        // Dragging a mind map node over another node: dropping moves the branch under it.
+        if (dragged?.tree?.parent) {
+          const st = useBoard.getState();
+          const moving = new Set(Object.keys(g.origin));
+          let target: string | null = null;
+          for (let i = st.order.length - 1; i >= 0; i--) {
+            const it = st.items[st.order[i]];
+            if (it?.tree && !moving.has(it.id) && containsPoint(it, world) && !collapsedHidden(st.items).has(it.id)) {
+              target = it.id;
+              break;
+            }
+          }
+          s.setTreeDrop(target && target !== dragged.tree.parent ? target : null);
+        }
         if (isFrame(dragged) && !isDeck(dragged)) {
           const st = useBoard.getState();
           const moving = new Set(Object.keys(g.origin));
@@ -664,8 +682,8 @@ export function Canvas() {
         // Frames are big backdrops: only pick them when fully enclosed.
         const hits = s.order.filter((id) => {
           const it = s.items[id];
-          // Comment pins are picked by clicking them, not by the marquee.
-          if (!it || it.type === 'comment') return false;
+          // Comment pins are picked by clicking them, not by the marquee; folded mind map nodes not at all.
+          if (!it || it.type === 'comment' || collapsedHidden(s.items).has(id)) return false;
           return isFrame(it) ? containsBox(rect, it) : intersects(it, rect);
         });
         for (const c of Object.values(s.connectors)) {
@@ -828,6 +846,9 @@ export function Canvas() {
       s.dropIntoDeck(s.selected[0], s.deckDrop.deckId, s.deckDrop.index, Object.keys(g.origin));
     }
     s.setDeckDrop(null);
+    // A mind map node dropped on another node moves (with its branch) under it.
+    if (g.kind === 'move' && g.moved && s.treeDrop && s.selected.length === 1) s.reparentNode(s.selected[0], s.treeDrop);
+    s.setTreeDrop(null);
     // A frame moved, resized or drawn into (or out of) a slide deck: re-lay out the decks.
     if (g.kind === 'move' || g.kind === 'resize' || g.kind === 'create') s.layoutDecks();
 

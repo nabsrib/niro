@@ -8,6 +8,21 @@ import { toggleEmojiPicker } from '../components/EmojiPicker';
 import { askForLink } from '../links';
 import { toggleTemplates } from '../components/TemplatesDialog';
 
+/**
+ * Start a mind map: the one selected shape becomes its central node, else a new
+ * central node appears in the middle of the view (toolbar button and M).
+ */
+export function startMindMapHere() {
+  const s = useBoard.getState();
+  const sel = s.selected.length === 1 ? s.items[s.selected[0]] : undefined;
+  if (sel && !sel.tree && (sel.type === 'rect' || sel.type === 'ellipse' || sel.type === 'sticky')) {
+    s.startMindMap({ x: 0, y: 0 }, sel.id);
+    return;
+  }
+  const { camera: c, viewport: v } = s;
+  s.startMindMap({ x: (v.w / 2 - c.x) / c.z, y: (v.h / 2 - c.y) / c.z });
+}
+
 const TOOL_KEYS: Record<string, Tool> = Object.fromEntries(
   TOOL_SHORTCUTS.map(({ key, tool }) => [key.toLowerCase(), tool] as const),
 );
@@ -144,6 +159,15 @@ export function useKeyboardShortcuts() {
           s.setSelected([]);
           s.setTool('select');
           return;
+        case 'Tab': {
+          // A selected mind map node: add a child and type in it.
+          const node = s.selected.length === 1 ? s.items[s.selected[0]] : undefined;
+          if (node?.tree && !s.readOnly) {
+            e.preventDefault();
+            s.addTreeNode(node.id, 'child');
+          }
+          return;
+        }
         case 'Enter':
           if (s.selected.length === 1) {
             e.preventDefault();
@@ -187,6 +211,11 @@ export function useKeyboardShortcuts() {
       }
       if (key === 'k' && !e.shiftKey && !s.readOnly) {
         askForLink();
+        return;
+      }
+      // M starts a mind map: from the selected shape, or a new one in the middle of the view.
+      if (key === 'm' && !e.shiftKey && !s.readOnly) {
+        startMindMapHere();
         return;
       }
       // Shift+T opens the templates gallery.

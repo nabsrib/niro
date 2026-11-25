@@ -98,6 +98,30 @@ body,
   pointer-events: none;
 }
 
+/* Mind map nodes: fold / unfold button on the edge the branch grows from. */
+.tree-toggle {
+  position: absolute;
+  display: none;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border: 1.5px solid #c4c4cc;
+  border-radius: 11px;
+  background: #fff;
+  color: #1a1a1a;
+  font: 600 13px/1 Inter, system-ui, sans-serif;
+  cursor: pointer;
+  z-index: 1;
+}
+.tree-toggle--right { right: 3px; top: 50%; transform: translateY(-50%); }
+.tree-toggle--left { left: 3px; top: 50%; transform: translateY(-50%); }
+.tree-toggle--down { bottom: 3px; left: 50%; transform: translateX(-50%); }
+.item:hover .tree-toggle,
+.tree-toggle--folded { display: grid; }
+.tree-toggle--folded { border-color: var(--accent); color: var(--accent); }
+.tree-toggle:disabled { cursor: default; }
+
 /* UML class boxes and database tables: one row per text line, in sections. */
 .compartments {
   position: absolute;
@@ -2239,6 +2263,14 @@ button {
 }
 
 /* Insertion line while dragging a frame into a deck's row. */
+.tree-drop {
+  position: absolute;
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  background: rgba(66, 98, 255, 0.08);
+  pointer-events: none;
+}
+
 .deck-drop {
   position: absolute;
   width: 4px;

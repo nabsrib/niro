@@ -252,3 +252,31 @@ export function framesHiddenFrom(items: ItemMap, order: string[], me: string): s
     return f?.type === 'frame' && !!f.hiddenBy && f.hiddenBy !== me;
   });
 }
+
+/** Kanban columns (`stack: true` frames): room around the cards and between them. */
+export const STACK = { pad: 24, gap: 14, top: 24 };
+export const isStack = (it: Item | undefined): boolean => isFrame(it) && !!it.stack && !it.deck;
+
+/**
+ * Lay out a stacked frame (kanban column): the items directly inside it (not
+ * frames, tree nodes or comment pins) in one column, top to bottom in their
+ * current order, centred across, with even gaps; the frame grows taller to fit
+ * (it never shrinks by itself). Returns only what changes.
+ */
+export function layoutStack(frame: Item, items: ItemMap, order: string[]): Record<string, Partial<Item>> {
+  const parents = frameParents(items, order);
+  const cards = order
+    .map((id) => items[id])
+    .filter((it): it is Item => !!it && parents.get(it.id) === frame.id && it.type !== 'frame' && !it.tree && it.type !== 'comment' && !it.locked)
+    .sort((a, b) => a.y + a.h / 2 - (b.y + b.h / 2));
+  const out: Record<string, Partial<Item>> = {};
+  let y = frame.y + STACK.top;
+  for (const c of cards) {
+    const x = frame.x + (frame.w - c.w) / 2;
+    if (Math.abs(c.x - x) > 0.5 || Math.abs(c.y - y) > 0.5) out[c.id] = { x, y };
+    y += c.h + STACK.gap;
+  }
+  const need = y - STACK.gap + STACK.pad - frame.y;
+  if (cards.length && need > frame.h + 0.5) out[frame.id] = { h: need };
+  return out;
+}

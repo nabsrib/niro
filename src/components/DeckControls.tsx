@@ -15,11 +15,24 @@ export function DeckControls() {
   const camera = useBoard((s) => s.camera);
   const selected = useBoard((s) => s.selected);
   const drop = useBoard((s) => s.deckDrop);
+  const treeDrop = useBoard((s) => (s.treeDrop ? s.items[s.treeDrop] : undefined));
   const interacting = useBoard((s) => s.interacting);
   const decks = useMemo(() => order.map((id) => items[id]).filter(isDeck), [items, order]);
 
   return (
     <>
+      {/* The mind map node a dragged node will move under. */}
+      {treeDrop && (
+        <div
+          className="tree-drop"
+          style={{
+            left: treeDrop.x * camera.z + camera.x - 4,
+            top: treeDrop.y * camera.z + camera.y - 4,
+            width: treeDrop.w * camera.z + 8,
+            height: treeDrop.h * camera.z + 8,
+          }}
+        />
+      )}
       {/* Where a dragged frame will join the deck's row. */}
       {drop && (
         <div

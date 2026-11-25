@@ -133,12 +133,13 @@ export function bindBoard(bd: BoardDoc): () => void {
         if (m) {
           if (!old) itemSetChanged = true;
           items[id] = readFields<Item>(id, m);
-          if (items[id].type === 'frame') framesChanged = true;
+          // Frames (decks, kanban columns) and mind map nodes are laid out again.
+          if (items[id].type === 'frame' || items[id].tree) framesChanged = true;
         } else if (old) {
           delete items[id];
           gone.set(id, old);
           itemSetChanged = true;
-          if (old.type === 'frame') framesChanged = true;
+          if (old.type === 'frame' || old.tree) framesChanged = true;
         }
       }
     }

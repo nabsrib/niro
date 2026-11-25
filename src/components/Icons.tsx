@@ -155,6 +155,34 @@ export const Icons = {
       <path d="M21 16l-5-5-9 9" />
     </Svg>
   ),
+  mindmap: () => (
+    <Svg>
+      <rect x="8.5" y="9.5" width="7" height="5" rx="2" />
+      <rect x="1.5" y="3" width="4.5" height="3.5" rx="1.2" />
+      <rect x="1.5" y="17.5" width="4.5" height="3.5" rx="1.2" />
+      <rect x="18" y="10.25" width="4.5" height="3.5" rx="1.2" />
+      <path d="M8.5 11c-1.5 0-1.5-6-2.5-6M8.5 13c-1.5 0-1.5 6-2.5 6M15.5 12H18" />
+    </Svg>
+  ),
+  addChild: () => (
+    <Svg>
+      <rect x="2" y="8" width="8" height="8" rx="2" />
+      <path d="M10 12h4M18 9v6M15 12h6" />
+    </Svg>
+  ),
+  addSibling: () => (
+    <Svg>
+      <rect x="6" y="2" width="12" height="7" rx="2" />
+      <path d="M12 9v4M12 15v6M9 18h6" />
+    </Svg>
+  ),
+  stack: () => (
+    <Svg>
+      <rect x="4" y="3" width="16" height="18" rx="2" />
+      <rect x="7" y="6" width="10" height="3.5" rx="1" />
+      <rect x="7" y="11.5" width="10" height="3.5" rx="1" />
+    </Svg>
+  ),
   template: () => (
     <Svg>
       <rect x="3" y="3" width="18" height="18" rx="2" />

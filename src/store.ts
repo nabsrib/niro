@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { BoardMeta, Box, Camera, Connector, Endpoint, Item, PenMode, ShapeKind, Side, TextRun, Tool, Vec } from './types';
+import type { BoardMeta, Box, Camera, Connector, Endpoint, Item, PenMode, ShapeKind, Side, TextRun, Tool, TreeLayout, Vec } from './types';
 import { boundsOf, fitCamera, uid, zoomCameraAt } from './geometry';
 import { ITEM_DEFAULTS } from './defaults';
 import { connectorGeometry, makeConnector, resolveConnector } from './connectors';
@@ -11,7 +11,9 @@ import {
   deckSlides,
   isDeck,
   isFrame,
+  isStack,
   layoutDeck,
+  layoutStack,
   presentationSlides,
   slideFrames,
   withFrameChildren,
@@ -21,6 +23,19 @@ import type { Gap, Guide } from './snapping';
 import { prepareForInsert, type BoardContent } from './boardFile';
 import { ERASER_DEFAULT, HIGHLIGHTER_COLORS, HIGHLIGHTER_WIDTHS, PEN_COLORS, PEN_WIDTHS } from './pen';
 import { borderWidth, compartmentLayout, isCompartmentShape, shapeOf } from './shapes';
+import {
+  BRANCH_COLORS,
+  collapsedHidden,
+  isTreeRoot,
+  layoutTree,
+  nodeSide,
+  remapTrees,
+  treeChildren,
+  treeDescendants,
+  treeLayoutOf,
+  treeRootOf,
+  withTreeChildren,
+} from './trees';
 
 type Clip = { items: Item[]; connectors: Connector[] };
 type ConnectorPatch = Partial<Pick<Connector, 'style' | 'startArrow' | 'endArrow' | 'strokeWidth' | 'stroke' | 'bend' | 'bends' | 'channel' | 'dash' | 'label' | 'labelAt' | 'labelSize' | 'labelColor' | 'startLabel' | 'endLabel'>>;
@@ -92,6 +107,8 @@ export interface BoardState {
    * (slide index) and the insertion line to draw, in world coordinates.
    */
   deckDrop: { deckId: string; index: number; line: { x: number; y1: number; y2: number } } | null;
+  /** While a mind map node is dragged over another node: that node (dropping moves the branch under it). */
+  treeDrop: string | null;
   /** Every board, for the boards menu; the open one is `boardId`. Content is saved by boards.ts. */
   boards: BoardMeta[];
   boardId: string | null;
@@ -148,8 +165,25 @@ export interface BoardState {
   createDeck(center: Vec): string;
   /** Add a blank slide at the end of a deck (same size as the last); returns its id. */
   addSlide(deckId: string): string | null;
-  /** Re-lay out every slide deck (no history: part of the change that triggered it). */
+  /**
+   * Re-lay out every slide deck, mind map / tree and stacked frame (kanban
+   * column). No history: part of the change that triggered it.
+   */
   layoutDecks(): void;
+  /**
+   * Start a mind map: turn item `fromId` into its central node, or (no id) add
+   * a new central node at `at` and start typing in it.
+   */
+  startMindMap(at: Vec, fromId?: string): void;
+  /** Add a child (or a sibling) of tree node `id`, lay out, and start typing in it. One undo step. */
+  addTreeNode(id: string, kind: 'child' | 'sibling'): string | null;
+  /** Fold / unfold the branch below tree node `id`. One undo step. */
+  toggleCollapse(id: string): void;
+  /** Change how the tree `rootId` is laid out (mind map, right only, org chart). One undo step. */
+  setTreeLayout(rootId: string, layout: TreeLayout): void;
+  /** Move tree node `id` (with its branch) under `parentId` (no history: part of the drag). */
+  reparentNode(id: string, parentId: string): boolean;
+  setTreeDrop(id: string | null): void;
   /** Resize a frame to wrap what is inside it (40 units of margin). One undo step; false if it is empty. */
   fitFrameToContent(id: string): boolean;
   setDeckDrop(drop: BoardState['deckDrop']): void;
@@ -255,6 +289,11 @@ function detachConnectors(s: BoardState, gone: Set<string>): Record<string, Conn
   return connectors;
 }
 
+/** A new mind map node: a white rounded box with a colored border, ready for text. */
+function makeNode(x: number, y: number, w: number, h: number, border: string, fontSize: number): Item {
+  return { ...ITEM_DEFAULTS.rect, id: uid(), x, y, w, h, shape: 'round', fill: '#FFFFFF', border, borderWidth: 2, fontSize, text: '' };
+}
+
 const movePoint = (e: Endpoint, dx: number, dy: number): Endpoint =>
   e.kind === 'point' ? { kind: 'point', x: e.x + dx, y: e.y + dy } : e;
 
@@ -282,6 +321,7 @@ export const useBoard = create<BoardState>()((set, get) => ({
   framePreset: 'custom',
   shapeKind: 'rect',
   deckDrop: null,
+  treeDrop: null,
   boards: [],
   boardId: null,
   exportDialog: null,
@@ -482,6 +522,7 @@ export const useBoard = create<BoardState>()((set, get) => ({
       presenting: null,
       focusId: null,
       deckDrop: null,
+      treeDrop: null,
       guides: [],
       gaps: [],
       connectHint: null,
@@ -550,13 +591,164 @@ export const useBoard = create<BoardState>()((set, get) => ({
   },
   layoutDecks: () => {
     const s = get();
-    const decks = s.order.map((id) => s.items[id]).filter(isDeck);
-    if (!decks.length) return;
-    for (const d of decks) {
+    for (const d of s.order.map((id) => s.items[id]).filter(isDeck)) {
       const st = get();
       const deck = st.items[d.id];
       if (deck) st.updateItems(layoutDeck(deck, deckSlides(deck, st.items, st.order), st.items, st.order));
     }
+    // Mind maps and trees, from each root.
+    for (const rootId of get().order.filter((id) => isTreeRoot(get().items[id]))) {
+      const st = get();
+      const p = layoutTree(rootId, st.items, st.connectors);
+      if (Object.keys(p.items).length) st.updateItems(p.items);
+      for (const [cid, patch] of Object.entries(p.connectors)) st.updateConnector(cid, patch);
+    }
+    // Kanban columns.
+    for (const f of get().order.map((id) => get().items[id]).filter(isStack)) {
+      const st = get();
+      const frame = st.items[f.id];
+      if (!frame) continue;
+      const patches = layoutStack(frame, st.items, st.order);
+      if (Object.keys(patches).length) st.updateItems(patches);
+    }
+  },
+  startMindMap: (at, fromId) => {
+    const s = get();
+    if (s.readOnly) return;
+    const from = fromId ? s.items[fromId] : undefined;
+    if (from) {
+      if (from.tree || from.locked || (from.type !== 'rect' && from.type !== 'ellipse' && from.type !== 'sticky')) return;
+      s.checkpoint();
+      s.updateItems({ [from.id]: { tree: { layout: 'mind' } } });
+      s.setSelected([from.id]);
+      return;
+    }
+    const root: Item = {
+      ...makeNode(at.x - 110, at.y - 40, 220, 80, '#1A1A1A', 20),
+      bold: true,
+      tree: { layout: 'mind' },
+    };
+    s.checkpoint();
+    set((st) => ({ items: { ...st.items, [root.id]: root }, order: [...st.order, root.id], tool: 'select' }));
+    s.startEditing(root.id);
+  },
+  addTreeNode: (id, kind) => {
+    const s = get();
+    const node = s.items[id];
+    if (s.readOnly || !node?.tree) return null;
+    const rootId = treeRootOf(s.items, id);
+    if (!rootId) return null;
+    const root = s.items[rootId];
+    // The root has no siblings: Enter on it adds a child too.
+    const parentId = kind === 'sibling' && node.tree.parent ? node.tree.parent : id;
+    const parent = s.items[parentId];
+    const layout = treeLayoutOf(root);
+    const siblings = (treeChildren(s.items).get(parentId) ?? []).map((k) => s.items[k]).filter(Boolean);
+    const depth = parentId === rootId ? 1 : 2;
+    const [w, h, size] = depth === 1 ? [180, 56, 18] : [160, 48, 16];
+    // Color: each main branch its own, then the branch's color all the way down.
+    const color =
+      parentId === rootId ? BRANCH_COLORS[siblings.length % BRANCH_COLORS.length] : (parent.border ?? BRANCH_COLORS[0]);
+    // Start where the layout will keep it in this order: just after the node (sibling) or the last child.
+    const after = kind === 'sibling' && parentId !== id ? node : siblings[siblings.length - 1];
+    let x: number;
+    let y: number;
+    if (layout === 'org') {
+      x = after ? after.x + after.w / 2 + 1 - w / 2 : parent.x + parent.w / 2 - w / 2;
+      y = parent.y + parent.h + 70;
+    } else {
+      let side = nodeSide(s.items, kind === 'sibling' && parentId !== id ? id : parentId);
+      if (parentId === rootId && layout === 'mind' && kind === 'child') {
+        // A new main branch goes to the side with fewer.
+        const rc = root.x + root.w / 2;
+        const lefts = siblings.filter((k) => k.x + k.w / 2 < rc).length;
+        side = lefts < siblings.length - lefts ? 'left' : 'right';
+      }
+      const sameSide = siblings.filter((k) => (k.x + k.w / 2 < root.x + root.w / 2 ? 'left' : 'right') === side || parentId !== rootId);
+      const last = kind === 'sibling' && parentId !== id ? node : sameSide[sameSide.length - 1];
+      x = side === 'left' ? parent.x - 70 - w : parent.x + parent.w + 70;
+      y = last ? last.y + last.h / 2 + 1 - h / 2 : parent.y + parent.h / 2 - h / 2;
+    }
+    const child: Item = { ...makeNode(x, y, w, h, color, size), tree: { parent: parentId } };
+    const line: Connector = {
+      ...makeConnector({ kind: 'item', itemId: parentId, side: null }, { kind: 'item', itemId: child.id, side: null }),
+      style: layout === 'org' ? 'elbow' : 'curved',
+      stroke: color,
+      strokeWidth: depth === 1 ? 3 : 2,
+      endArrow: 'none',
+      branch: true,
+    };
+    s.checkpoint();
+    set((st) => ({
+      items: {
+        ...st.items,
+        [child.id]: child,
+        // Adding under a folded node opens it.
+        ...(parent.tree?.collapsed ? { [parentId]: { ...parent, tree: { ...parent.tree, collapsed: undefined } } } : {}),
+      },
+      order: [...st.order, child.id],
+      connectors: { ...st.connectors, [line.id]: line },
+    }));
+    get().layoutDecks();
+    get().startEditing(child.id);
+    return child.id;
+  },
+  toggleCollapse: (id) => {
+    const s = get();
+    const node = s.items[id];
+    if (s.readOnly || !node?.tree) return;
+    const collapsed = !node.tree.collapsed;
+    s.checkpoint();
+    s.updateItems({ [id]: { tree: { ...node.tree, collapsed: collapsed || undefined } } });
+    if (collapsed) {
+      const hidden = new Set(treeDescendants(get().items, [id]));
+      set((st) => ({ selected: st.selected.filter((x) => !hidden.has(x)) }));
+    }
+    get().layoutDecks();
+  },
+  setTreeLayout: (rootId, layout) => {
+    const s = get();
+    const root = s.items[rootId];
+    if (s.readOnly || !root?.tree || treeLayoutOf(root) === layout) return;
+    s.checkpoint();
+    const patches: Record<string, Partial<Item>> = { [rootId]: { tree: { ...root.tree, layout } } };
+    if (layout === 'mind') {
+      // Share the main branches out between both sides, in their current order.
+      const rc = root.x + root.w / 2;
+      const kids = (treeChildren(s.items).get(rootId) ?? []).map((k) => s.items[k]).filter(Boolean);
+      kids
+        .sort((a, b) => a.y - b.y || a.x - b.x)
+        .forEach((k, i) => {
+          const right = i % 2 === 0;
+          patches[k.id] = { x: right ? rc + 100 : rc - 100 - k.w };
+        });
+    }
+    s.updateItems(patches);
+    get().layoutDecks();
+  },
+  reparentNode: (id, parentId) => {
+    const s = get();
+    const node = s.items[id];
+    const parent = s.items[parentId];
+    if (!node?.tree?.parent || !parent?.tree || id === parentId || node.tree.parent === parentId) return false;
+    // Never under its own branch.
+    if (treeDescendants(s.items, [id]).includes(parentId)) return false;
+    const rootId = treeRootOf(s.items, parentId);
+    const patches: Record<string, Partial<Item>> = { [id]: { tree: { ...node.tree, parent: parentId } } };
+    // Take the new branch's color (a new main branch keeps its own).
+    const color = rootId !== parentId ? parent.border : undefined;
+    const branch = withTreeChildren([id], s.items);
+    if (color) for (const k of branch) patches[k] = { ...patches[k], border: color };
+    s.updateItems(patches);
+    for (const c of Object.values(s.connectors)) {
+      if (!c.branch || c.to.kind !== 'item' || c.from.kind !== 'item') continue;
+      if (c.to.itemId === id) s.updateConnector(c.id, { from: { ...c.from, itemId: parentId }, ...(color ? { stroke: color } : {}) });
+      else if (color && branch.includes(c.to.itemId)) s.updateConnector(c.id, { stroke: color });
+    }
+    return true;
+  },
+  setTreeDrop: (treeDrop) => {
+    if (treeDrop !== get().treeDrop) set({ treeDrop });
   },
   goToSlide: (index) => {
     const s = get();
@@ -671,14 +863,21 @@ export const useBoard = create<BoardState>()((set, get) => ({
     // Locked items are never deleted (unlock them first).
     ids = ids.filter((id) => !get().items[id]?.locked);
     if (!ids.length) return;
+    // A mind map node goes with its whole branch.
+    ids = withTreeChildren(ids, get().items).filter((id, i, all) => all.indexOf(id) === i && !get().items[id]?.locked);
     get().checkpoint();
     set((s) => {
       const gone = new Set(ids);
       const items = { ...s.items };
       for (const id of ids) delete items[id];
+      const connectors = detachConnectors(s, gone);
+      // Branch lines go with their nodes (they would be left as loose lines otherwise).
+      for (const c of Object.values(s.connectors)) {
+        if (c.branch && [c.from, c.to].some((e) => e.kind === 'item' && gone.has(e.itemId))) delete connectors[c.id];
+      }
       return {
         items,
-        connectors: detachConnectors(s, gone),
+        connectors,
         order: s.order.filter((id) => !gone.has(id)),
         selected: s.selected.filter((id) => !gone.has(id)),
         editingId: s.editingId && gone.has(s.editingId) ? null : s.editingId,
@@ -714,8 +913,11 @@ export const useBoard = create<BoardState>()((set, get) => ({
   setSelected: (selected) => set({ selected }),
   selectAll: () =>
     set((s) => ({
-      // Comment pins aren't part of a selection.
-      selected: [...s.order.filter((id) => s.items[id]?.type !== 'comment'), ...Object.keys(s.connectors)],
+      // Comment pins and folded-away mind map nodes aren't part of a selection.
+      selected: [
+        ...s.order.filter((id) => s.items[id]?.type !== 'comment' && !collapsedHidden(s.items).has(id)),
+        ...Object.keys(s.connectors),
+      ],
       editingId: null,
     })),
   startEditing: (id) => {
@@ -760,6 +962,23 @@ export const useBoard = create<BoardState>()((set, get) => ({
       }
       return;
     }
+    // A new mind map node left empty (Enter / Tab, then Esc): drop it and its line, as part of its
+    // creation's undo step.
+    if (item.tree?.parent && !text.trim() && !item.text.trim() && !treeChildren(s.items).get(id)?.length) {
+      set((st) => {
+        const items = { ...st.items };
+        delete items[id];
+        const connectors = { ...st.connectors };
+        for (const c of Object.values(st.connectors)) {
+          if (c.branch && c.to.kind === 'item' && c.to.itemId === id) delete connectors[c.id];
+        }
+        // Its parent stays selected, ready for Tab.
+        const parent = item.tree?.parent;
+        return { items, connectors, order: st.order.filter((x) => x !== id), selected: parent && items[parent] ? [parent] : [] };
+      });
+      get().layoutDecks();
+      return;
+    }
     if (item.type === 'frame' && !text.trim()) text = 'Frame';
     const nextRich = rich === undefined ? item.rich : (rich ?? undefined);
     if (item.text === text && JSON.stringify(item.rich ?? null) === JSON.stringify(nextRich ?? null)) return;
@@ -772,6 +991,8 @@ export const useBoard = create<BoardState>()((set, get) => ({
     }
     s.checkpoint();
     s.updateItems({ [id]: patch });
+    // A mind map node may have grown: make room for it.
+    if (item.tree) get().layoutDecks();
   },
   duplicate: (ids) => {
     const clip = collect(get(), ids);
@@ -838,8 +1059,8 @@ export const useBoard = create<BoardState>()((set, get) => ({
  * along automatically; ends attached to items that are not copied become free points.
  */
 export function collect(s: BoardState, sel: string[]): Clip {
-  // Copying a frame copies what is inside it too.
-  const ids = withFrameChildren(sel, s.items, s.order);
+  // Copying a frame copies what is inside it too, and a mind map node its branch.
+  const ids = [...new Set(withTreeChildren(withFrameChildren(sel, s.items, s.order), s.items))];
   const idSet = new Set(ids);
   const items = ids.map((id) => s.items[id]).filter(Boolean);
   const itemIds = new Set(items.map((it) => it.id));
@@ -861,11 +1082,13 @@ export function collect(s: BoardState, sel: string[]): Clip {
 function insertCopies(clip: Clip): Clip {
   useBoard.getState().checkpoint();
   const idMap = new Map<string, string>();
-  const items = clip.items.map((it) => {
+  const moved = clip.items.map((it) => {
     const id = uid();
     idMap.set(it.id, id);
     return { ...it, id, x: it.x + PASTE_OFFSET, y: it.y + PASTE_OFFSET };
   });
+  // Mind map nodes point at their copied parents.
+  const items = remapTrees(moved, idMap);
   const remap = (e: Endpoint): Endpoint =>
     e.kind === 'item'
       ? { ...e, itemId: idMap.get(e.itemId) ?? e.itemId }

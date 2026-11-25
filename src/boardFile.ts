@@ -1,5 +1,21 @@
-import { ARROW_HEADS, type ArrowHead, type Bend, type Connector, type Endpoint, type Item, type ItemType, type Side, type TextRun, type Vec, type ShapeKind } from './types';
+import {
+  ARROW_HEADS,
+  TREE_LAYOUTS,
+  type ArrowHead,
+  type Bend,
+  type Connector,
+  type Endpoint,
+  type Item,
+  type ItemType,
+  type Side,
+  type TextRun,
+  type Vec,
+  type ShapeKind,
+  type TreeInfo,
+  type TreeLayout,
+} from './types';
 import { SHAPE_KINDS } from './shapes';
+import { remapTrees } from './trees';
 import { normalizeRuns } from './richText';
 import { MIN_ITEM_SIZE, boundsOf, uid } from './geometry';
 import { CONNECTOR_DEFAULTS, LABEL_DEFAULTS } from './connectors';
@@ -161,8 +177,21 @@ function sanitizeItem(raw: unknown): Item | null {
         }
       : {};
   // Lock (any item); frames: clip and hidden; emoji, link cards and comment pins.
-  const extras: Pick<Item, 'locked' | 'clip' | 'hiddenBy' | 'url' | 'thread' | 'resolved'> = {
+  // Mind map / tree node info (a parent pointing at a missing item is dropped in parseBoard).
+  const rawTree = isObj(raw.tree) ? raw.tree : null;
+  const tree: TreeInfo | undefined = rawTree
+    ? {
+        ...(typeof rawTree.parent === 'string' && rawTree.parent ? { parent: rawTree.parent } : {}),
+        ...(typeof rawTree.layout === 'string' && (TREE_LAYOUTS as string[]).includes(rawTree.layout)
+          ? { layout: rawTree.layout as TreeLayout }
+          : {}),
+        ...(rawTree.collapsed === true ? { collapsed: true } : {}),
+      }
+    : undefined;
+  const extras: Pick<Item, 'locked' | 'clip' | 'hiddenBy' | 'url' | 'thread' | 'resolved' | 'tree' | 'stack'> = {
     ...(raw.locked === true ? { locked: true } : {}),
+    ...(tree ? { tree } : {}),
+    ...(type === 'frame' && raw.stack === true ? { stack: true } : {}),
     ...(type === 'frame' && raw.clip === true ? { clip: true } : {}),
     ...(type === 'frame' && typeof raw.hiddenBy === 'string' && raw.hiddenBy ? { hiddenBy: raw.hiddenBy.slice(0, 100) } : {}),
   };
@@ -268,6 +297,7 @@ function sanitizeConnector(raw: unknown, itemIds: Set<string>): Connector | null
     ...(Number.isFinite(raw.labelAt) ? { labelAt: Math.min(Math.max(raw.labelAt as number, 0), 1) } : {}),
     ...(Number.isFinite(raw.labelSize) ? { labelSize: Math.min(Math.max(raw.labelSize as number, 4), 400) } : {}),
     ...(typeof raw.labelColor === 'string' ? { labelColor: color(raw.labelColor, LABEL_DEFAULTS.color) } : {}),
+    ...(raw.branch === true ? { branch: true } : {}),
     ...(typeof raw.startLabel === 'string' && raw.startLabel.trim() ? { startLabel: raw.startLabel.slice(0, 40) } : {}),
     ...(typeof raw.endLabel === 'string' && raw.endLabel.trim() ? { endLabel: raw.endLabel.slice(0, 40) } : {}),
   };
@@ -322,6 +352,14 @@ export function parseBoard(text: string): ParseResult {
       items.push(it);
     }
   }
+  // A tree node whose parent isn't in the file becomes the root of its own map; a node
+  // with neither a parent nor a layout is no tree node at all.
+  for (let i = 0; i < items.length; i++) {
+    const t = items[i].tree;
+    if (!t) continue;
+    if (t.parent && !seen.has(t.parent)) items[i] = { ...items[i], tree: { layout: t.layout ?? 'mind', ...(t.collapsed ? { collapsed: true } : {}) } };
+    else if (!t.parent && !t.layout) items[i] = { ...items[i], tree: { ...t, layout: 'mind' } };
+  }
   const connectors: Connector[] = [];
   for (const raw of rawConnectors) {
     const c = sanitizeConnector(raw, seen);
@@ -360,11 +398,13 @@ export function prepareForInsert(content: BoardContent, center: Vec): BoardConte
   const dx = center.x - (b.x + b.w / 2);
   const dy = center.y - (b.y + b.h / 2);
   const idMap = new Map<string, string>();
-  const items = content.items.map((it) => {
+  const placed = content.items.map((it) => {
     const id = uid();
     idMap.set(it.id, id);
     return { ...it, id, x: it.x + dx, y: it.y + dy };
   });
+  // Mind map nodes point at their parents' new ids.
+  const items = remapTrees(placed, idMap);
   const move = (e: Endpoint): Endpoint =>
     e.kind === 'item'
       ? { ...e, itemId: idMap.get(e.itemId) ?? e.itemId }

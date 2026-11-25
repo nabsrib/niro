@@ -38,6 +38,21 @@ export type ShapeKind =
   | 'entity'
   | 'actor';
 
+/** How a mind map / tree is laid out: branches on both sides, all to the right, or top-down (org chart). */
+export type TreeLayout = 'mind' | 'right' | 'org';
+export const TREE_LAYOUTS: TreeLayout[] = ['mind', 'right', 'org'];
+
+/**
+ * Mind map / tree node (trees.ts). The root carries `layout`; every other node
+ * its `parent` (an item id). Sibling order comes from position, never stored.
+ */
+export interface TreeInfo {
+  parent?: string;
+  layout?: TreeLayout;
+  /** Its branch is folded away (hidden on the board and in exports). */
+  collapsed?: boolean;
+}
+
 /** Style a part of an item's text can override (absent = the item's own style). */
 export interface RunStyle {
   bold?: boolean;
@@ -112,6 +127,10 @@ export interface Item extends Box {
   thread?: CommentMessage[];
   /** Comment pins only: marked resolved (shown faded). */
   resolved?: boolean;
+  /** Mind map / tree node (trees.ts); absent = not part of a tree. */
+  tree?: TreeInfo;
+  /** Frames only: a kanban column: the items directly inside stack in one tidy column. */
+  stack?: boolean;
   /** Rectangles only: the shape drawn (shapes.ts); absent = plain rectangle. */
   shape?: ShapeKind;
   /** Rectangles and ellipses: border color; absent = BORDER_DEFAULTS.color. */
@@ -246,6 +265,8 @@ export interface Connector {
   labelSize?: number;
   /** Label text color; absent = LABEL_DEFAULTS.color. */
   labelColor?: string;
+  /** A mind map / tree branch line (parent → child): restyled by the tree layout, deleted with either node. */
+  branch?: boolean;
   /** Small text near the start / the end (UML multiplicity like `1`, `*`, `0..1`); absent = none. */
   startLabel?: string;
   endLabel?: string;

@@ -1,6 +1,7 @@
 import type { Box, Camera, Connector, Endpoint, Item } from './types';
 import { boundsOf, intersects } from './geometry';
 import { LABEL_DEFAULTS } from './connectors';
+import { collapsedHidden } from './trees';
 
 /**
  * Viewport culling: only items and connectors near the screen get rendered.
@@ -43,12 +44,18 @@ export function keepRendered(selected: string[], editingId: string | null): Set<
  * in `keep` (e.g. selected or being edited) wherever they are.
  */
 export function visibleItems(ids: string[], items: ItemMap, rect: Box | null, keep: Set<string>): string[] {
-  if (!rect) return ids;
+  // Nodes inside a folded mind map branch are never drawn.
+  const hidden = collapsedHidden(items as Record<string, Item>);
+  if (!rect) return hidden.size ? ids.filter((id) => !hidden.has(id)) : ids;
   return ids.filter((id) => {
     const it = items[id];
-    return !!it && (keep.has(id) || intersects(it, rect));
+    return !!it && !hidden.has(id) && (keep.has(id) || intersects(it, rect));
   });
 }
+
+/** Whether a connector touches a node inside a folded mind map branch (then it isn't drawn). */
+const touchesHidden = (c: Connector, hidden: Set<string>) =>
+  hidden.size > 0 && [c.from, c.to].some((e) => e.kind === 'item' && hidden.has(e.itemId));
 
 const endBox = (e: Endpoint, items: ItemMap): Box | null =>
   e.kind === 'point' ? { x: e.x, y: e.y, w: 0, h: 0 } : (items[e.itemId] ?? null);
@@ -77,7 +84,8 @@ export function visibleConnectors(
   rect: Box | null,
   keep: Set<string>,
 ): string[] {
-  const ids = Object.keys(connectors);
+  const hidden = collapsedHidden(items as Record<string, Item>);
+  const ids = Object.keys(connectors).filter((id) => !touchesHidden(connectors[id], hidden));
   if (!rect) return ids;
   return ids.filter((id) => {
     if (keep.has(id)) return true;

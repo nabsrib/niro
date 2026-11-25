@@ -3,6 +3,7 @@ import { boundsOf, intersects } from './geometry';
 import { LABEL_DEFAULTS, connectorGeometry, dashArray, endLabels, pointAlong, type ConnectorGeometry } from './connectors';
 import { isDeck, isFrame, renderOrder, withFrameChildren } from './frames';
 import { pathPoints, smoothPath } from './pen';
+import { collapsedHidden } from './trees';
 import {
   borderColor,
   borderDash,
@@ -84,6 +85,14 @@ export function collectExport(
   /** Image pixels per board unit; titles and margins keep their pixel size. */
   pxPerUnit = 1,
 ): ExportContent | null {
+  // Folded mind map branches stay folded in pictures too (their nodes and lines are left out).
+  const hidden = collapsedHidden(items as Record<string, Item>);
+  if (hidden.size) {
+    order = order.filter((id) => !hidden.has(id));
+    connectors = Object.fromEntries(
+      Object.entries(connectors).filter(([, c]) => ![c.from, c.to].some((e) => e.kind === 'item' && hidden.has(e.itemId))),
+    );
+  }
   // A region: everything that touches it, cropped to it.
   if (area.kind === 'region') {
     const box = area.box;

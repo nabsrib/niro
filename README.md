@@ -83,6 +83,15 @@ no account needed), and a small optional server adds what makes a whiteboard a t
 - **Comments** (C): click the board to start a thread; a pin marks it. Click a pin to read and reply
   (Ctrl+Enter), resolve / reopen or delete; drag a pin to move it. Pins keep their size at any zoom and move
   with their frame. Viewers can read comments.
+- **Mind maps and org charts** (M, the toolbar button, or "Start a mind map" on a selected shape): type in the
+  central node, then **Tab** adds a child and **Enter** a sibling (Shift+Enter is a new line); an empty new node
+  disappears when you press Esc. The map lays itself out: branches on both sides (or only the right, or top-down
+  as an org chart, picked in the node's toolbar), each main branch in its own color with curved lines. Fold a
+  branch with the – on a node's edge (+N shows how many are hidden); folded nodes stay hidden in exports too.
+  Drag a node past its siblings to reorder it, or onto another node to move its branch there; moving the
+  central node moves the whole map; deleting a node deletes its branch.
+- **Kanban columns**: "Stack cards" on a frame's toolbar lines up what is inside it in one tidy column (the
+  frame grows to fit); drag a card into another column at the height you want it.
 - **Templates** (toolbar, Shift+T or the niro menu): a gallery of ready-made layouts: flowchart, swimlane
   flowchart, org chart, mind map, UML class diagram, ER diagram, use case diagram, state diagram, kanban, timeline, retrospective, daily stand-up, brainstorm, SWOT, priority
   matrix and customer journey map. Click one to add it to the middle of the view (selected, one undo step).
@@ -261,6 +270,8 @@ phone ──Wi-Fi──► your computer :5173 (Vite: the app)
 | I | Add an image (pick a file); Ctrl+V pastes a copied picture |
 | J / K / C | Emoji / link card (Ctrl+V pastes a web address as one) / comment |
 | Shift+T | Templates gallery |
+| M | Mind map (from the selected shape, or a new one) |
+| Tab / Enter / Shift+Enter (in a mind map node) | Add a child / a sibling / a new line |
 | Ctrl+Shift+L | Lock / unlock the selection |
 | Right-drag, middle-drag, Space + drag | Pan |
 | Double-click a sticky, shape or text | Edit its text |
@@ -353,6 +364,7 @@ niro/
 - `src/shapes.ts`: shape outlines (paths, polygons, text room, where a line meets the outline), border defaults
 - `src/components/ShapeOptions.tsx`: shapes flyout of the Rectangle tool; `ShapeStyle.tsx`: shape and border controls
 - `src/components/FramesPanel.tsx`: frames panel with thumbnails
+- `src/trees.ts`: mind maps and trees (children, roots, folded branches, the layout, copying, pure)
 - `src/templates.ts`: built-in templates (a small builder plus each layout, pure)
 - `src/templateActions.ts`: adding a template to the board, My templates (save the selection, rename, delete)
 - `src/components/TemplatesDialog.tsx`: templates gallery with thumbnails
@@ -422,7 +434,8 @@ niro/
 - [x] Emoji, link cards, comments, lock, clip / hide frames, frame links, bend snapping
 - [x] Templates gallery (diagrams, planning, meetings, strategy), My templates, flowchart shapes
 - [x] UML and database diagrams: class box, table, actor, UML and crow's-foot line ends, end labels, 4 templates
-- [ ] More diagram kits: mind map with automatic layout, sequence diagrams, tables
+- [x] Mind maps and org charts (Tab / Enter, automatic layout, folding), kanban columns
+- [ ] More diagram kits: sequence diagrams, tables
 - [ ] Boards dashboard with thumbnails
 - [ ] Typing together in one item (letter-by-letter merging)
 

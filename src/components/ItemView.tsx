@@ -28,6 +28,7 @@ import {
 } from '../shapes';
 import { dashArray } from '../connectors';
 import { zoomToRead } from '../cameraGlide';
+import { nodeSide, treeChildren, treeDescendants } from '../trees';
 
 /** CSS border style for each border pattern. */
 const CSS_DASH = { solid: 'solid', dashed: 'dashed', dotted: 'dotted' } as const;
@@ -38,6 +39,9 @@ const PLACEHOLDER: Partial<Record<ItemType, string>> = { text: 'Type something' 
 export const ItemView = memo(function ItemView({ id, clip }: { id: string; clip?: string }) {
   const item = useBoard((s) => s.items[id]);
   const editing = useBoard((s) => s.editingId === id);
+  // Mind map nodes: how many children (for the fold button).
+  const kidCount = useBoard((s) => (s.items[id]?.tree ? (treeChildren(s.items).get(id)?.length ?? 0) : 0));
+  const readOnly = useBoard((s) => s.readOnly);
   const ref = useRef<HTMLDivElement>(null);
   const type = item?.type;
 
@@ -284,6 +288,7 @@ export const ItemView = memo(function ItemView({ id, clip }: { id: string; clip?
         </div>
       ) : (
         <div className="item__text">
+          {kidCount > 0 && <TreeToggle id={id} collapsed={!!item.tree?.collapsed} readOnly={readOnly} />}
           {item.rich
             ? item.rich.map((r, i) => (
                 <span key={i} style={runCss(r)}>
@@ -310,6 +315,35 @@ function AssetImage({ id }: { id?: string }) {
   return <img className="image__img" src={url} alt="" draggable={false} />;
 }
 
+/**
+ * Fold button on a mind map node with children: "–" (shown on hover) folds its
+ * branch away, "+N" (always shown) brings the N hidden nodes back. It sits on
+ * the edge the branch grows from.
+ */
+function TreeToggle({ id, collapsed, readOnly }: { id: string; collapsed: boolean; readOnly: boolean }) {
+  const items = useBoard.getState().items;
+  const side = nodeSide(items, id);
+  const hidden = collapsed ? treeDescendants(items, [id]).length : 0;
+  if (readOnly && !collapsed) return null;
+  return (
+    <button
+      className={`tree-toggle tree-toggle--${side}${collapsed ? ' tree-toggle--folded' : ''}`}
+      data-ui
+      disabled={readOnly}
+      title={collapsed ? `Show ${hidden} hidden` : 'Fold this branch'}
+      aria-label={collapsed ? `Show ${hidden} hidden` : 'Fold this branch'}
+      onPointerDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        useBoard.getState().toggleCollapse(id);
+      }}
+    >
+      {collapsed ? `+${hidden}` : '–'}
+    </button>
+  );
+}
+
 /** Item whose box already grew in the current edit (its growth is one undo step). */
 let grownEdit: string | null = null;
 
@@ -332,6 +366,8 @@ function growToFit(id: string, el: HTMLElement) {
     grownEdit = id;
   }
   s.updateItems({ [id]: { h: it.h + Math.ceil(over / share) + 4 } });
+  // A mind map node that grew pushes its neighbours apart.
+  if (it.tree) s.layoutDecks();
 }
 
 export function TextEditor({
@@ -443,6 +479,15 @@ export function TextEditor({
       onInput={() => ref.current && growToFit(id, ref.current)}
       onKeyDown={(e) => {
         e.stopPropagation();
+        // Mind map node: Tab adds a child, Enter a sibling (Shift+Enter is a new line), then type on.
+        const plainEnter = e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey;
+        if ((e.key === 'Tab' || plainEnter) && useBoard.getState().items[id]?.tree) {
+          e.preventDefault();
+          commitActiveEdit();
+          ref.current?.blur();
+          useBoard.getState().addTreeNode(id, e.key === 'Tab' ? 'child' : 'sibling');
+          return;
+        }
         if (e.key === 'Escape' || (e.key === 'Enter' && (singleLine || e.ctrlKey || e.metaKey))) {
           e.preventDefault();
           commitActiveEdit();

@@ -44,6 +44,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { label: 'Emoji', combos: [['J']] },
       { label: 'Link card (or paste a web address)', combos: [['K']] },
       { label: 'Templates', combos: [['Shift', 'T']] },
+      { label: 'Mind map (from the selected shape, or a new one)', combos: [['M']] },
     ],
   },
   {
@@ -61,6 +62,14 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { label: 'Deselect', combos: [['Esc']] },
       { label: 'Edit text or connector label', combos: [['Enter'], ['Double-click']] },
       { label: 'Finish editing', combos: [['Esc'], ['Mod', 'Enter']] },
+    ],
+  },
+  {
+    title: 'Mind maps',
+    items: [
+      { label: 'Add a child node (selected or while typing)', combos: [['Tab']] },
+      { label: 'Add a sibling node (while typing)', combos: [['Enter']] },
+      { label: 'New line inside a node', combos: [['Shift', 'Enter']] },
     ],
   },
   {

@@ -7,6 +7,7 @@ import { ShapeIcon } from './ShapeOptions';
 import { toggleEmojiPicker, useEmojiPicker } from './EmojiPicker';
 import { askForLink } from '../links';
 import { toggleTemplates, useTemplatesDialog } from './TemplatesDialog';
+import { startMindMapHere } from '../hooks/useKeyboardShortcuts';
 
 export function Toolbar() {
   const tool = useBoard((s) => s.tool);
@@ -60,6 +61,9 @@ export function Toolbar() {
           </button>
           <button className="icon-btn" title={tooltip('Link card', ['K'])} aria-label="Link card" onClick={askForLink}>
             <Icons.link />
+          </button>
+          <button className="icon-btn" title={tooltip('Mind map', ['M'])} aria-label="Mind map" onClick={startMindMapHere}>
+            <Icons.mindmap />
           </button>
           <button
             className={`icon-btn${templatesOpen ? ' icon-btn--active' : ''}`}

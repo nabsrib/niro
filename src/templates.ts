@@ -2,6 +2,8 @@ import type { ArrowHead, Connector, ConnectorStyle, Endpoint, Item, ItemType, Li
 import type { BoardContent } from './boardFile';
 import { ITEM_DEFAULTS } from './defaults';
 import { CONNECTOR_DEFAULTS } from './connectors';
+import { isTreeRoot, layoutTree } from './trees';
+import { layoutStack } from './frames';
 
 /**
  * Built-in templates (like Miro's): ready-made layouts of ordinary items and
@@ -44,6 +46,8 @@ type LinkOptions = {
   end?: ArrowHead;
   stroke?: string;
   width?: number;
+  /** A mind map / tree branch line (the tree layout restyles it). */
+  branch?: boolean;
 };
 
 const GREY_TEXT = '#6B6B76';
@@ -97,6 +101,7 @@ class Builder {
       endArrow: o.end ?? 'arrow',
       ...(o.dash ? { dash: o.dash } : {}),
       ...(o.label ? { label: o.label } : {}),
+      ...(o.branch ? { branch: true } : {}),
       ...(o.startLabel ? { startLabel: o.startLabel } : {}),
       ...(o.endLabel ? { endLabel: o.endLabel } : {}),
     });
@@ -104,7 +109,21 @@ class Builder {
   }
 
   done(): BoardContent {
-    return { items: this.items, connectors: this.connectors };
+    // Mind maps and trees come laid out (also for the gallery's thumbnails).
+    let items = Object.fromEntries(this.items.map((it) => [it.id, it]));
+    let connectors = Object.fromEntries(this.connectors.map((c) => [c.id, c]));
+    const applyItems = (patch: Record<string, Partial<Item>>) => {
+      items = Object.fromEntries(Object.entries(items).map(([id, it]) => [id, patch[id] ? { ...it, ...patch[id] } : it]));
+    };
+    for (const root of this.items.filter(isTreeRoot)) {
+      const p = layoutTree(root.id, items, connectors);
+      applyItems(p.items);
+      connectors = Object.fromEntries(Object.entries(connectors).map(([id, c]) => [id, p.connectors[id] ? { ...c, ...p.connectors[id] } : c]));
+    }
+    // Kanban columns come stacked.
+    const order = this.items.map((it) => it.id);
+    for (const f of this.items.filter((it) => it.type === 'frame' && it.stack)) applyItems(layoutStack(items[f.id], items, order));
+    return { items: this.items.map((it) => items[it.id]), connectors: this.connectors.map((c) => connectors[c.id]) };
   }
 }
 
@@ -112,7 +131,7 @@ class Builder {
 function columns(
   b: Builder,
   cols: { title: string; fill: string; sticky: string; notes: string[] }[],
-  opts: { w?: number; h?: number; gap?: number; top?: number; card?: { w: number; h: number } } = {},
+  opts: { w?: number; h?: number; gap?: number; top?: number; card?: { w: number; h: number }; stack?: boolean } = {},
 ) {
   const w = opts.w ?? 340;
   const h = opts.h ?? 560;
@@ -120,7 +139,9 @@ function columns(
   const top = opts.top ?? 0;
   cols.forEach((c, i) => {
     const x = i * (w + gap);
-    b.frame(x, top, w, h, c.title, c.fill);
+    const frame = b.frame(x, top, w, h, c.title, c.fill);
+    // Kanban: cards stack in a tidy column.
+    if (opts.stack) b.items.find((it) => it.id === frame)!.stack = true;
     c.notes.forEach((note, j) => {
       if (opts.card) {
         b.sticky(x + (w - opts.card.w) / 2, top + 24 + j * (opts.card.h + 16), note, c.sticky, opts.card.w, opts.card.h);
@@ -176,38 +197,52 @@ function swimlanes(): BoardContent {
   return b.done();
 }
 
+/** An org chart: a real tree, laid out top-down (Tab adds a report, Enter a colleague). */
 function orgChart(): BoardContent {
   const b = new Builder();
-  const line = { from: 'bottom' as const, to: 'top' as const, end: 'none' as const };
-  const ceo = b.shape('round', 400, 0, 200, 90, 'CEO\nName', '#A6CCF5', { bold: true });
-  const heads = [
-    b.shape('round', 100, 170, 200, 90, 'CTO\nName', '#D5F692'),
-    b.shape('round', 400, 170, 200, 90, 'CFO\nName', '#D5F692'),
-    b.shape('round', 700, 170, 200, 90, 'COO\nName', '#D5F692'),
-  ];
-  for (const h of heads) b.link(ceo, h, line);
-  const tech = [b.shape('round', 0, 340, 180, 80, 'Engineering'), b.shape('round', 220, 340, 180, 80, 'Design')];
-  for (const t of tech) b.link(heads[0], t, line);
-  b.link(heads[1], b.shape('round', 410, 340, 180, 80, 'Finance'), line);
-  b.link(heads[2], b.shape('round', 710, 340, 180, 80, 'Support'), line);
+  const node = (parent: string | null, text: string, fill: string, x: number) =>
+    b.shape('round', x, parent ? 200 : 0, 190, 80, text, fill, {
+      border: '#1A1A1A',
+      borderWidth: 2,
+      tree: parent ? { parent } : { layout: 'org' },
+      ...(parent ? {} : { bold: true }),
+    });
+  const line = (from: string, to: string) => b.link(from, to, { from: 'bottom', to: 'top', end: 'none', branch: true });
+  const ceo = node(null, 'CEO\nName', '#A6CCF5', 400);
+  const heads = [node(ceo, 'CTO\nName', '#D5F692', 100), node(ceo, 'CFO\nName', '#D5F692', 400), node(ceo, 'COO\nName', '#D5F692', 700)];
+  heads.forEach((h) => line(ceo, h));
+  const teams: [number, string, number][] = [[0, 'Engineering', 0], [0, 'Design', 220], [1, 'Finance', 410], [2, 'Support', 710]];
+  for (const [head, text, x] of teams) line(heads[head], node(heads[head], text, '#FFFFFF', x));
   return b.done();
 }
 
+/** A mind map: a real tree (Tab adds a child, Enter a sibling; it lays itself out). */
 function mindMap(): BoardContent {
   const b = new Builder();
-  const center = b.item('ellipse', 400, 250, 240, 130, { text: 'Main idea', fill: '#FFD02F', fontSize: 24, bold: true });
-  const branches: { x: number; y: number; text: string; color: string; leaves: { x: number; y: number }[] }[] = [
-    { x: 80, y: 60, text: 'Idea 1', color: '#2F6FED', leaves: [{ x: -160, y: 10 }, { x: -160, y: 100 }] },
-    { x: 80, y: 470, text: 'Idea 2', color: '#2BA84A', leaves: [{ x: -160, y: 430 }, { x: -160, y: 520 }] },
-    { x: 780, y: 60, text: 'Idea 3', color: '#8E44D9', leaves: [{ x: 1020, y: 10 }, { x: 1020, y: 100 }] },
-    { x: 780, y: 470, text: 'Idea 4', color: '#F28C28', leaves: [{ x: 1020, y: 430 }, { x: 1020, y: 520 }] },
+  const center = b.shape('round', 400, 250, 240, 90, 'Main idea', '#FFD02F', {
+    fontSize: 24,
+    bold: true,
+    borderWidth: 0,
+    tree: { layout: 'mind' },
+  });
+  const branches: { x: number; y: number; text: string; color: string }[] = [
+    { x: 80, y: 60, text: 'Idea 1', color: '#2F6FED' },
+    { x: 80, y: 470, text: 'Idea 2', color: '#2BA84A' },
+    { x: 780, y: 60, text: 'Idea 3', color: '#8E44D9' },
+    { x: 780, y: 470, text: 'Idea 4', color: '#F28C28' },
   ];
   for (const br of branches) {
-    const id = b.shape('round', br.x, br.y, 180, 70, br.text, '#FFFFFF', { border: br.color, borderWidth: 3 });
-    b.link(center, id, { style: 'curved', end: 'none', stroke: br.color, width: 3 });
-    for (const lf of br.leaves) {
-      const leaf = b.shape('round', lf.x, lf.y, 140, 54, 'Detail', '#FFFFFF', { border: br.color, borderWidth: 1, fontSize: 16 });
-      b.link(id, leaf, { style: 'curved', end: 'none', stroke: br.color });
+    const id = b.shape('round', br.x, br.y, 180, 56, br.text, '#FFFFFF', { border: br.color, borderWidth: 2, tree: { parent: center } });
+    b.link(center, id, { style: 'curved', end: 'none', stroke: br.color, width: 3, branch: true });
+    for (let i = 0; i < 2; i++) {
+      const left = br.x < 400;
+      const leaf = b.shape('round', left ? br.x - 230 : br.x + 250, br.y + i * 60, 160, 48, 'Detail', '#FFFFFF', {
+        border: br.color,
+        borderWidth: 2,
+        fontSize: 16,
+        tree: { parent: id },
+      });
+      b.link(id, leaf, { style: 'curved', end: 'none', stroke: br.color, branch: true });
     }
   }
   return b.done();
@@ -293,7 +328,7 @@ function kanban(): BoardContent {
       { title: 'Doing', fill: '#F3F4F6', sticky: '#A6CCF5', notes: ['Build the sign-up page', 'Test on phones'] },
       { title: 'Done', fill: '#F3F4F6', sticky: '#93D275', notes: ['Set up the project'] },
     ],
-    { w: 320, h: 600, card: { w: 280, h: 110 } },
+    { w: 320, h: 600, card: { w: 280, h: 110 }, stack: true },
   );
   return b.done();
 }
